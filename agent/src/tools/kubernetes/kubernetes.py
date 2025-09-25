@@ -7,15 +7,14 @@ with AutoGen agents for function calling.
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
-from typing import Any, Annotated
+from typing import Annotated, Any
 
 import structlog
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
-from ..config import get_settings
+from ....configs.config import get_settings
 
 logger = structlog.get_logger()
 

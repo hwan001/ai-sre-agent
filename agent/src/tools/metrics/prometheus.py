@@ -13,7 +13,7 @@ from typing import Annotated, Any
 import httpx
 import structlog
 
-from ..config import get_settings
+from configs.config import get_settings
 
 logger = structlog.get_logger()
 
@@ -80,7 +80,10 @@ class PrometheusTools:
         end_time: Annotated[
             str | datetime | int | float | None, "End time for the query. Optional."
         ] = None,
-        hostname: Annotated[str | None, "Hostname to filter metrics. Optional."] = None,
+        namespace: Annotated[
+            str | None, "Kubernetes namespace to filter metrics. Optional."
+        ] = None,
+        pod_name: Annotated[str | None, "Pod name to filter metrics. Optional."] = None,
         limit_per_metric: Annotated[
             int, "Maximum number of time series per metric (default: 50)"
         ] = 50,
@@ -96,7 +99,8 @@ class PrometheusTools:
             results = {
                 "status": "success",
                 "query_info": {
-                    "hostname_filter": hostname,
+                    "namespace_filter": namespace,
+                    "pod_name_filter": pod_name,
                     "metrics_requested": len(metric_names),
                     "limit_per_metric": limit_per_metric,
                 },
@@ -109,10 +113,18 @@ class PrometheusTools:
                 endpoint_base = f"{self.prometheus_url}/api/v1/query_range"
 
             for metric_name in metric_names:
+                query = metric_name  # Initialize query variable
                 try:
-                    # Build query for this specific metric
-                    if hostname:
-                        query = f'{metric_name}{{instance=~".*{hostname}.*"}}'
+                    # Build query for this specific metric with Kubernetes filters
+                    filters = []
+                    if namespace:
+                        filters.append(f'namespace="{namespace}"')
+                    if pod_name:
+                        filters.append(f'pod=~".*{pod_name}.*"')
+
+                    if filters:
+                        filter_str = ",".join(filters)
+                        query = f"{metric_name}{{{filter_str}}}"
                     else:
                         query = metric_name
 
@@ -141,7 +153,8 @@ class PrometheusTools:
                     logger.debug(
                         "Executing metric query",
                         metric_name=metric_name,
-                        hostname=hostname,
+                        namespace=namespace,
+                        pod_name=pod_name,
                     )
 
                     # Execute the query
@@ -244,7 +257,10 @@ class PrometheusTools:
 
     async def query_essential_metrics(
         self,
-        hostname: Annotated[str | None, "Hostname filter. Optional."] = None,
+        namespace: Annotated[
+            str | None, "Kubernetes namespace filter. Optional."
+        ] = None,
+        pod_name: Annotated[str | None, "Pod name filter. Optional."] = None,
         start_time: Annotated[
             str | datetime | int | float | None, "Start time. Optional."
         ] = None,
@@ -260,30 +276,66 @@ class PrometheusTools:
         and system availability - all as calculated metrics rather than raw values.
         """
         try:
-            # Define essential calculated metrics
-            if hostname:
+            # Define essential calculated metrics with Kubernetes filters
+            filters = []
+            if namespace:
+                filters.append(f'namespace="{namespace}"')
+            if pod_name:
+                filters.append(f'pod=~".*{pod_name}.*"')
+
+            filter_str = ""
+            if filters:
+                filter_str = "," + ",".join(filters)
+
+            if namespace or pod_name:
                 essential_queries = {
-                    "system_up": f'up{{instance=~".*{hostname}.*"}}',
-                    "cpu_usage_percent": f'100 - (avg by (instance) (rate(node_cpu_seconds_total{{mode="idle",instance=~".*{hostname}.*"}}[5m])) * 100)',
-                    "memory_usage_percent": f'(1 - (node_memory_MemAvailable_bytes{{instance=~".*{hostname}.*"}} / node_memory_MemTotal_bytes{{instance=~".*{hostname}.*"}})) * 100',
-                    "disk_usage_percent": f'(1 - (node_filesystem_free_bytes{{instance=~".*{hostname}.*",fstype!="tmpfs",fstype!="overlay"}} / node_filesystem_size_bytes{{instance=~".*{hostname}.*",fstype!="tmpfs",fstype!="overlay"}})) * 100',
-                    "load_average": f'node_load1{{instance=~".*{hostname}.*"}}',
+                    "system_up": f"up{{{filter_str[1:]}}}",  # Remove leading comma
+                    "cpu_usage_percent": f"100 - (avg by (instance) "
+                    f"(rate(node_cpu_seconds_total"
+                    f'{{mode="idle"{filter_str}}}[5m])) * 100)',
+                    "memory_usage_percent": f"(1 - (node_memory_MemAvailable_bytes"
+                    f"{{{filter_str[1:]}}} / "
+                    f"node_memory_MemTotal_bytes"
+                    f"{{{filter_str[1:]}}})) * 100",
+                    "disk_usage_percent": f"(1 - (node_filesystem_free_bytes"
+                    f'{{fstype!="tmpfs",fstype!="overlay"'
+                    f"{filter_str}}} / "
+                    f"node_filesystem_size_bytes"
+                    f'{{fstype!="tmpfs",fstype!="overlay"'
+                    f"{filter_str}}})) * 100",
+                    "load_average": f"node_load1{{{filter_str[1:]}}}",
                 }
             else:
                 essential_queries = {
                     "system_up": 'up{job="node-exporter"}',
-                    "cpu_usage_percent": '100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)',
-                    "memory_usage_percent": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
-                    "disk_usage_percent": '(1 - (node_filesystem_free_bytes{fstype!="tmpfs",fstype!="overlay"} / node_filesystem_size_bytes{fstype!="tmpfs",fstype!="overlay"})) * 100',
+                    "cpu_usage_percent": (
+                        "100 - (avg by (instance) "
+                        "(rate(node_cpu_seconds_total"
+                        '{mode="idle"}[5m])) * 100)'
+                    ),
+                    "memory_usage_percent": (
+                        "(1 - (node_memory_MemAvailable_bytes "
+                        "/ node_memory_MemTotal_bytes)) * 100"
+                    ),
+                    "disk_usage_percent": (
+                        "(1 - (node_filesystem_free_bytes"
+                        '{fstype!="tmpfs",fstype!="overlay"} '
+                        "/ node_filesystem_size_bytes"
+                        '{fstype!="tmpfs",fstype!="overlay"})) '
+                        "* 100"
+                    ),
                     "load_average": "node_load1",
                 }
 
             results = {
                 "status": "success",
                 "query_info": {
-                    "hostname_filter": hostname,
+                    "namespace_filter": namespace,
+                    "pod_name_filter": pod_name,
                     "essential_metrics_count": len(essential_queries),
-                    "description": "Essential system metrics with calculated percentages",
+                    "description": (
+                        "Essential system metrics with " "calculated percentages"
+                    ),
                 },
                 "essential_metrics": {},
             }

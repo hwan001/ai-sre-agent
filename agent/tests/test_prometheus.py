@@ -68,20 +68,22 @@ def test_prometheus_tools():
 
     print("\n" + "=" * 70 + "\n")
 
-    # Test 3: Specific metrics with hostname filter
-    print("3. Testing with hostname filter...")
+    # Test 3: Specific metrics with namespace and pod name filters
+    print("3. Testing with namespace and pod name filters...")
     try:
-        hostname_result = prometheus_query_specific_metrics(
+        k8s_result = prometheus_query_specific_metrics(
             metric_names=["up", "node_cpu_seconds_total"],
-            hostname="localhost",
+            namespace="default",
+            pod_name="monitoring",
             limit_per_metric=3,
         )
-        print(f"Status: {hostname_result['status']}")
-        if hostname_result["status"] == "success":
-            query_info = hostname_result["query_info"]
-            print(f"Hostname filter: {query_info['hostname_filter']}")
+        print(f"Status: {k8s_result['status']}")
+        if k8s_result["status"] == "success":
+            query_info = k8s_result["query_info"]
+            print(f"Namespace filter: {query_info['namespace_filter']}")
+            print(f"Pod name filter: {query_info['pod_name_filter']}")
             print(f"Total series: {query_info.get('total_series', 0)}")
-            for name, data in hostname_result["metrics_by_name"].items():
+            for name, data in k8s_result["metrics_by_name"].items():
                 if "error" not in data:
                     series_count = data["series_count"]
                     limited = data.get("limited", False)
@@ -89,34 +91,33 @@ def test_prometheus_tools():
                 else:
                     print(f"  - {name}: ERROR")
         else:
-            print(f"Error: {hostname_result['error']}")
+            print(f"Error: {k8s_result['error']}")
     except Exception as e:
         print(f"Exception: {e}")
 
     print("\n" + "=" * 70 + "\n")
 
-    # Test 4: Specific metrics with hostname filter
-    print("4. Testing with hostname filter...")
+    # Test 4: Essential metrics with namespace and pod filters
+    print("4. Testing essential metrics with Kubernetes filters...")
     try:
-        hostname_result = prometheus_query_specific_metrics(
-            metric_names=["up", "node_cpu_seconds_total"],
-            hostname="localhost",
-            limit_per_metric=3,
+        k8s_essential_result = prometheus_get_essential_metrics(
+            namespace="production",
+            pod_name="web-server",
         )
-        print(f"Status: {hostname_result['status']}")
-        if hostname_result["status"] == "success":
-            query_info = hostname_result["query_info"]
-            print(f"Hostname filter: {query_info['hostname_filter']}")
-            print(f"Total series: {query_info.get('total_series', 0)}")
-            for name, data in hostname_result["metrics_by_name"].items():
+        print(f"Status: {k8s_essential_result['status']}")
+        if k8s_essential_result["status"] == "success":
+            query_info = k8s_essential_result["query_info"]
+            print(f"Namespace filter: {query_info['namespace_filter']}")
+            print(f"Pod name filter: {query_info['pod_name_filter']}")
+            print(f"Essential metrics: {query_info['essential_metrics_count']}")
+            for name, data in k8s_essential_result["essential_metrics"].items():
                 if "error" not in data:
                     series_count = data["series_count"]
-                    limited = data.get("limited", False)
-                    print(f"  - {name}: {series_count} series, limited: {limited}")
+                    print(f"  - {name}: {series_count} series")
                 else:
                     print(f"  - {name}: ERROR")
         else:
-            print(f"Error: {hostname_result['error']}")
+            print(f"Error: {k8s_essential_result['error']}")
     except Exception as e:
         print(f"Exception: {e}")
 
@@ -124,8 +125,8 @@ def test_prometheus_tools():
     print("✅ Use prometheus_query_specific_metrics() for querying specific metrics")
     print("✅ Use prometheus_get_essential_metrics() for system monitoring")
     print("💡 Always set limit_per_metric to control data volume")
-    print("💡 Use hostname filters to reduce data scope")
-    print("💡 tools provide better efficiency and control")
+    print("💡 Use namespace and pod_name filters for Kubernetes environments")
+    print("💡 Enhanced tools provide better efficiency and control")
 
     print("\n=== Test Complete ===")
 
@@ -135,7 +136,8 @@ if __name__ == "__main__":
     print("====================================")
     print()
     print("This test demonstrates the efficient approaches for")
-    print("querying Prometheus metrics with improved performance.")
+    print("querying Prometheus metrics with improved performance")
+    print("and Kubernetes-aware filtering.")
     print()
 
     test_prometheus_tools()

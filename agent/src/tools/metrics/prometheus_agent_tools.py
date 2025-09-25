@@ -28,7 +28,8 @@ def prometheus_query_specific_metrics(
     metric_names: list[str],
     start_time: str | datetime | int | float | None = None,
     end_time: str | datetime | int | float | None = None,
-    hostname: str | None = None,
+    namespace: str | None = None,
+    pod_name: str | None = None,
     limit_per_metric: int = 50,
     step: str = "1m",
     prometheus_url: str | None = None,
@@ -43,7 +44,8 @@ def prometheus_query_specific_metrics(
         metric_names: List of metric names to query (e.g., ['up', 'node_load1'])
         start_time: Start time. Optional.
         end_time: End time. Optional.
-        hostname: Hostname filter. Optional.
+        namespace: Kubernetes namespace filter. Optional.
+        pod_name: Pod name filter. Optional.
         limit_per_metric: Max time series per metric (default: 50)
         step: Query resolution step (default: '1m')
         prometheus_url: Prometheus server URL. Optional.
@@ -54,13 +56,20 @@ def prometheus_query_specific_metrics(
     tools = get_prometheus_tools(prometheus_url)
     return asyncio.run(
         tools.query_multiple_metrics(
-            metric_names, start_time, end_time, hostname, limit_per_metric, step
+            metric_names,
+            start_time,
+            end_time,
+            namespace,
+            pod_name,
+            limit_per_metric,
+            step,
         )
     )
 
 
 def prometheus_get_essential_metrics(
-    hostname: str | None = None,
+    namespace: str | None = None,
+    pod_name: str | None = None,
     start_time: str | datetime | int | float | None = None,
     end_time: str | datetime | int | float | None = None,
     step: str = "1m",
@@ -73,7 +82,8 @@ def prometheus_get_essential_metrics(
     and load averages - all pre-calculated and limited in volume.
 
     Args:
-        hostname: Hostname filter. Optional.
+        namespace: Kubernetes namespace filter. Optional.
+        pod_name: Pod name filter. Optional.
         start_time: Start time. Optional.
         end_time: End time. Optional.
         step: Query resolution step (default: '1m')
@@ -84,12 +94,14 @@ def prometheus_get_essential_metrics(
     """
     tools = get_prometheus_tools(prometheus_url)
     return asyncio.run(
-        tools.query_essential_metrics(hostname, start_time, end_time, step)
+        tools.query_essential_metrics(namespace, pod_name, start_time, end_time, step)
     )
 
 
 def prometheus_get_metric_names(
-    hostname: str | None = None, prometheus_url: str | None = None
+    namespace: str | None = None,
+    pod_name: str | None = None,
+    prometheus_url: str | None = None,
 ) -> dict[str, Any]:
     """
     Get list of available metric names from Prometheus.
@@ -98,7 +110,8 @@ def prometheus_get_metric_names(
     functionality was removed with the deprecated PrometheusTools class.
 
     Args:
-        hostname: Filter metrics by hostname pattern. Optional.
+        namespace: Filter metrics by namespace. Optional.
+        pod_name: Filter metrics by pod name pattern. Optional.
         prometheus_url: Prometheus server URL. Optional.
 
     Returns:
@@ -107,7 +120,8 @@ def prometheus_get_metric_names(
     return {
         "status": "success",
         "total_metrics": 0,
-        "hostname_filter": hostname,
+        "namespace_filter": namespace,
+        "pod_name_filter": pod_name,
         "metrics": [],
         "note": (
             "Metric names listing not implemented in enhanced version. "
@@ -174,12 +188,16 @@ RECOMMENDED: Use efficient enhanced tools for better performance
 1. Query specific metrics efficiently:
    prometheus_query_specific_metrics(
        metric_names=['up', 'node_load1', 'node_memory_MemAvailable_bytes'],
-       hostname="web-server-01",
+       namespace="production",
+       pod_name="web-server",
        limit_per_metric=50
    )
 
 2. Get essential system metrics with calculated values:
-   prometheus_get_essential_metrics(hostname="database-01")
+   prometheus_get_essential_metrics(
+       namespace="production", 
+       pod_name="database"
+   )
 
 3. Query metrics with time range:
    prometheus_query_specific_metrics(
@@ -207,6 +225,7 @@ Benefits of  Tools:
 - Pre-calculated percentages for system monitoring
 - Better error handling per metric
 - Reduced Prometheus server load
+- Kubernetes-aware filtering by namespace and pod name
 """
 
 

@@ -7,24 +7,41 @@ loading settings from environment variables and .env files.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
-from typing import Any
 
+from dotenv import load_dotenv
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Set up basic logging
+logger = logging.getLogger(__name__)
+
+# Get the project root directory
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+# Load environment variables from .env file
+# First load from project root, then from current directory
+env_files = [
+    PROJECT_ROOT / ".env",
+    Path(".env"),
+]
+
+for env_file in env_files:
+    if env_file.exists():
+        logger.info(f"Loading environment variables from {env_file}")
+        load_dotenv(env_file, override=False)
+    else:
+        logger.debug(f"Environment file {env_file} not found")
 
 
 class LLMSettings(BaseSettings):
     """LLM provider configuration."""
 
-    # Azure OpenAI settings
+    # Azure OpenAI settings (현재 유일한 LLM 제공자)
     azure_openai_endpoint: str | None = None
     azure_openai_api_key: str | None = None
     azure_openai_api_version: str = "2024-02-15-preview"
-
-    # OpenAI settings (alternative)
-    openai_api_key: str | None = None
-    openai_model: str = "gpt-4"
 
     # General settings
     temperature: float = 0.3
@@ -47,8 +64,8 @@ class KubernetesSettings(BaseSettings):
     in_cluster: bool = False
     timeout_seconds: int = 30
 
-    class Config:
-        env_prefix = "K8S_"
+    model_config = SettingsConfigDict(env_prefix="K8S_")
+
 
 class APISettings(BaseSettings):
     """API server configuration."""
@@ -58,21 +75,23 @@ class APISettings(BaseSettings):
     reload: bool = False
     log_level: str = "INFO"
 
-    class Config:
-        env_prefix = "API_"
+    model_config = SettingsConfigDict(env_prefix="API_")
 
 
 class SafetySettings(BaseSettings):
     """Safety and security configuration."""
 
-    enable_dry_run: bool = True
-    require_human_approval: bool = True
-    max_concurrent_actions: int = 3
-    action_timeout_seconds: int = 300
+    # Note: 안전장치 기능들이 현재 미구현 상태
+    # 향후 구현 시 아래 설정들을 활성화할 예정
+
+    # enable_dry_run: bool = True
+    # require_human_approval: bool = True
+    # max_concurrent_actions: int = 3
+    # action_timeout_seconds: int = 300
 
     # Rate limiting
-    rate_limit_window_minutes: int = 5
-    rate_limit_max_actions: int = 10
+    # rate_limit_window_minutes: int = 5
+    # rate_limit_max_actions: int = 10
 
     # Allow-list file path
     allowlist_file: str = "configs/allowlist.yaml"
@@ -82,25 +101,24 @@ class MonitoringSettings(BaseSettings):
     """Monitoring integration settings."""
 
     prometheus_url: str = "http://prometheus:9090"
-    prometheus_timeout: int = 30
 
-    grafana_url: str | None = None
-    grafana_api_key: str | None = None
-    
     # Loki settings
     loki_url: str = "http://loki:3100"
     loki_mock: bool = True
 
+
 class AzureSettings(BaseSettings):
     """Azure integration settings."""
 
-    key_vault_url: str | None = None
-    client_id: str | None = None
-    client_secret: str | None = None
-    tenant_id: str | None = None
+    # Note: Azure Key Vault 연동은 현재 미구현 상태
+    # 향후 구현 시 아래 설정들을 활성화할 예정
 
-    class Config:
-        env_prefix = "AZURE_"
+    # key_vault_url: str | None = None
+    # client_id: str | None = None
+    # client_secret: str | None = None
+    # tenant_id: str | None = None
+
+    model_config = SettingsConfigDict(env_prefix="AZURE_")
 
 
 class DevelopmentSettings(BaseSettings):
@@ -124,11 +142,10 @@ class Settings(BaseSettings):
     azure: AzureSettings = Field(default_factory=AzureSettings)
     development: DevelopmentSettings = Field(default_factory=DevelopmentSettings)
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
-        extra = "ignore"
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
+    )
+
 
 # Global settings instance
 _settings: Settings | None = None
