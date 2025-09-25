@@ -11,7 +11,7 @@ from typing import Any
 import structlog
 from autogen_agentchat.agents import AssistantAgent
 
-from ..tools.kubernetes.kubernetes import KubernetesTools
+from tools.kubernetes.kubernetes import KubernetesTools
 
 logger = structlog.get_logger()
 

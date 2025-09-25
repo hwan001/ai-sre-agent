@@ -5,22 +5,22 @@ Development runner for SRE Agent.
 Quick script to start the agent with development settings.
 """
 
-import os
 import sys
 from pathlib import Path
 
-# Add src to Python path
-src_path = Path(__file__).parent / "src"
+import structlog
+import uvicorn
+
+# Add both project root and src to Python path for proper imports
+project_root = Path(__file__).parent
+src_path = project_root / "src"
+sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(src_path))
 
-# Load environment variables early
-from dotenv import load_dotenv
-
-load_dotenv()
+# Import after path setup
+from configs.config import get_settings  # noqa: E402
 
 # Configure development logging
-import structlog
-
 structlog.configure(
     processors=[
         structlog.stdlib.filter_by_level,
@@ -42,17 +42,14 @@ structlog.configure(
 
 def main():
     """Run the development server."""
-    import uvicorn
-    from src.config import get_settings
-
     settings = get_settings()
 
     ## Print all settings for verification
-    # model_dic = settings.model_dump()   
+    # model_dic = settings.model_dump()
     # for group in model_dic.keys():
     #     for key, value in model_dic[group].items():
     #         print(f"{key}: {value}")
-    
+
     # Override settings for development
     settings.api.reload = True
     settings.development.debug = True

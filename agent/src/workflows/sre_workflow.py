@@ -7,28 +7,21 @@ for Kubernetes incident response and remediation.
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any
 import os
-from pathlib import Path
+from typing import Any
 
 import structlog
-from dotenv import load_dotenv
-
-# Load environment variables from .env file
-env_path = Path(__file__).parent.parent.parent / '.env'
-load_dotenv(env_path)
-from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
-from autogen_agentchat.teams import RoundRobinGroupChat
+from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.base import TaskResult
 from autogen_agentchat.conditions import MaxMessageTermination, TextMentionTermination
+from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_core import CancellationToken
 from autogen_ext.models.openai import AzureOpenAIChatCompletionClient
 
-from ..agents.analysis import AnalysisAgent
-from ..config import get_settings
-from ..plugins.loki_client import get_loki_tools
-from ..plugins.log_summarizer import get_log_summarizer_tools
+from agents.analysis import AnalysisAgent
+from configs.config import get_settings
+from plugins.log_summarizer import get_log_summarizer_tools
+from plugins.loki_client import get_loki_tools
 
 logger = structlog.get_logger()
 
@@ -75,7 +68,7 @@ class SREWorkflow:
             api_key=azure_api_key,
             api_version=azure_api_version,
             seed=42,
-            temperature=0.1
+            temperature=0.1,
         )
         self._model_clients.append(analysis_model_client)
 
@@ -84,7 +77,7 @@ class SREWorkflow:
             name="analysis_agent",
             description="SRE analysis agent specialized in Kubernetes troubleshooting.",
             model_client=analysis_model_client,
-            tools=all_tools
+            tools=all_tools,
         )
 
         # Create other placeholder agents
@@ -95,7 +88,7 @@ class SREWorkflow:
             api_key=azure_api_key,
             api_version=azure_api_version,
             seed=42,
-            temperature=0.1
+            temperature=0.1,
         )
         self._model_clients.append(recommendation_model_client)
 
@@ -103,7 +96,7 @@ class SREWorkflow:
             name="recommendation_agent",
             description="Suggest remediation actions based on analysis.",
             model_client=recommendation_model_client,
-            tools=all_tools
+            tools=all_tools,
         )
 
         return {
@@ -121,7 +114,7 @@ class SREWorkflow:
         return RoundRobinGroupChat(
             participants=list(self.agents.values()),
             termination_condition=termination,
-            max_turns=10
+            max_turns=10,
         )
 
     async def process_incident(
@@ -184,7 +177,9 @@ class SREWorkflow:
 
             # Use the new v0.4 run method with CancellationToken
             cancellation_token = CancellationToken()
-            task_result = await self.team.run(task=initial_task, cancellation_token=cancellation_token)
+            task_result = await self.team.run(
+                task=initial_task, cancellation_token=cancellation_token
+            )
 
             # Extract decision from TaskResult
             result = self._extract_decision(task_result)
@@ -216,7 +211,7 @@ class SREWorkflow:
 
             # Get the last message from the conversation
             last_message = task_result.messages[-1]
-            last_content = getattr(last_message, 'content', str(last_message))
+            last_content = getattr(last_message, "content", str(last_message))
 
             # Simple heuristic to extract decision based on content
             # In production, this could use structured parsing or another LLM
@@ -235,7 +230,7 @@ class SREWorkflow:
                 {
                     "action": "review_team_analysis",
                     "description": "Review the multi-agent team analysis",
-                    "priority": "medium"
+                    "priority": "medium",
                 }
             ]
 
@@ -243,9 +238,9 @@ class SREWorkflow:
                 "decision": decision,
                 "confidence": confidence,
                 "recommended_actions": recommended_actions,
-                #"reasoning": f"Multi-agent team analysis: {last_content[:200]}...",
+                # "reasoning": f"Multi-agent team analysis: {last_content[:200]}...",
                 "reasoning": f"Multi-agent team analysis with AI-powered log analysis: {last_content}",
-                "full_conversation": [str(msg) for msg in task_result.messages]
+                "full_conversation": [str(msg) for msg in task_result.messages],
             }
 
         except Exception as e:
@@ -271,9 +266,9 @@ class SREWorkflow:
             logger.warning("Error closing Loki tools", error=str(e))
         try:
             # Log summarizer tools may not have close method if they're just functions
-            if hasattr(self.log_summarizer_tools, 'close'):
+            if hasattr(self.log_summarizer_tools, "close"):
                 await self.log_summarizer_tools.close()
         except Exception as e:
             logger.warning("Error closing log summarizer tools", error=str(e))
-        
-        logger.info("SRE Workflow closed")            
+
+        logger.info("SRE Workflow closed")

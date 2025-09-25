@@ -29,9 +29,21 @@ class PrometheusTools:
             prometheus_url: Prometheus server URL. If None, will get from settings.
         """
         self.settings = get_settings()
-        self.prometheus_url = prometheus_url or getattr(
-            self.settings, "prometheus_url", "http://localhost:9090"
-        )
+
+        # Handle placeholder/empty prometheus_url values
+        if prometheus_url and isinstance(prometheus_url, str):
+            prometheus_url = prometheus_url.strip()
+            if prometheus_url.lower() in ["string", "none", "null", ""]:
+                prometheus_url = None
+
+        # Get URL from settings, with fallback chain
+        if prometheus_url:
+            self.prometheus_url = prometheus_url
+        else:
+            self.prometheus_url = (
+                self.settings.monitoring.prometheus_url or "http://localhost:9090"
+            )
+
         self.client = httpx.Client(timeout=30.0)
         logger.info("Prometheus tools initialized", url=self.prometheus_url)
 
@@ -46,6 +58,11 @@ class PrometheusTools:
         if isinstance(dt_input, datetime):
             return dt_input
         elif isinstance(dt_input, str):
+            # Handle empty strings, whitespace, or placeholder values
+            dt_input = dt_input.strip()
+            if not dt_input or dt_input.lower() in ["string", "none", "null", ""]:
+                raise ValueError(f"Empty or placeholder datetime value: {dt_input}")
+
             try:
                 # Try ISO format first
                 return datetime.fromisoformat(dt_input.replace("Z", "+00:00"))
@@ -132,7 +149,22 @@ class PrometheusTools:
                     params = {"query": query}
 
                     if start_time is not None or end_time is not None:
-                        if start_time:
+                        # Helper function to check if a datetime value is meaningful
+                        def is_valid_datetime_value(value):
+                            if value is None:
+                                return False
+                            if isinstance(value, str):
+                                value = value.strip()
+                                invalid_values = ["string", "none", "null", ""]
+                                return (
+                                    bool(value) and value.lower() not in invalid_values
+                                )
+                            return True
+
+                        if (
+                            is_valid_datetime_value(start_time)
+                            and start_time is not None
+                        ):
                             start_dt = self._parse_datetime_input(start_time)
                             params["start"] = self._format_datetime(start_dt)
                         else:
@@ -140,7 +172,7 @@ class PrometheusTools:
                             start_dt = datetime.now(UTC) - timedelta(hours=1)
                             params["start"] = self._format_datetime(start_dt)
 
-                        if end_time:
+                        if is_valid_datetime_value(end_time) and end_time is not None:
                             end_dt = self._parse_datetime_input(end_time)
                             params["end"] = self._format_datetime(end_dt)
                         else:
@@ -351,14 +383,29 @@ class PrometheusTools:
                     params = {"query": query}
 
                     if start_time is not None or end_time is not None:
-                        if start_time:
+                        # Helper function to check if a datetime value is meaningful
+                        def is_valid_datetime_value(value):
+                            if value is None:
+                                return False
+                            if isinstance(value, str):
+                                value = value.strip()
+                                invalid_values = ["string", "none", "null", ""]
+                                return (
+                                    bool(value) and value.lower() not in invalid_values
+                                )
+                            return True
+
+                        if (
+                            is_valid_datetime_value(start_time)
+                            and start_time is not None
+                        ):
                             start_dt = self._parse_datetime_input(start_time)
                             params["start"] = self._format_datetime(start_dt)
                         else:
                             start_dt = datetime.now(UTC) - timedelta(hours=1)
                             params["start"] = self._format_datetime(start_dt)
 
-                        if end_time:
+                        if is_valid_datetime_value(end_time) and end_time is not None:
                             end_dt = self._parse_datetime_input(end_time)
                             params["end"] = self._format_datetime(end_dt)
                         else:
@@ -445,6 +492,201 @@ class PrometheusTools:
 
         except Exception as e:
             logger.error("Failed to query essential metrics", error=str(e))
+            return {"status": "error", "error": str(e)}
+
+    async def get_metric_names(
+        self,
+        namespace: Annotated[
+            str | None, "Kubernetes namespace to filter metrics. Optional."
+        ] = None,
+        pod_name: Annotated[str | None, "Pod name to filter metrics. Optional."] = None,
+        metric_name: Annotated[
+            str | None, "Metric name pattern to filter. Optional."
+        ] = None,
+        limit: Annotated[
+            int, "Maximum number of metric names to return (default: 1000)"
+        ] = 1000,
+    ) -> dict[str, Any]:
+        """
+        Get list of available metric names from Prometheus.
+
+        This queries the /api/v1/label/__name__/values endpoint to retrieve
+        all available metric names. Optionally filters by namespace, pod,
+        and metric name pattern.
+        """
+        try:
+            # Get all metric names from Prometheus
+            endpoint = f"{self.prometheus_url}/api/v1/label/__name__/values"
+            response = self.client.get(endpoint)
+            response.raise_for_status()
+
+            result = response.json()
+
+            if result.get("status") != "success":
+                return {
+                    "status": "error",
+                    "error": result.get("error", "Failed to get metric names"),
+                }
+
+            all_metrics = result.get("data", [])
+
+            # Apply metric name pattern filter first (client-side filtering)
+            if metric_name:
+                import re
+
+                pattern = metric_name.replace("*", ".*").replace("?", ".")
+                regex = re.compile(pattern, re.IGNORECASE)
+                all_metrics = [m for m in all_metrics if regex.search(m)]
+
+            # If no filters are specified, return all metrics (limited)
+            if not namespace and not pod_name:
+                limited_metrics = (
+                    all_metrics[:limit] if len(all_metrics) > limit else all_metrics
+                )
+
+                return {
+                    "status": "success",
+                    "total_metrics": len(all_metrics),
+                    "returned_metrics": len(limited_metrics),
+                    "limited": len(all_metrics) > limit,
+                    "namespace_filter": None,
+                    "pod_name_filter": None,
+                    "metric_name_filter": metric_name,
+                    "metrics": limited_metrics,
+                }
+
+            # If filters are specified, we need to check which metrics actually exist
+            # with those filters by testing each metric
+            filtered_metrics = []
+
+            # Build filter query parts
+            filters = []
+            if namespace:
+                filters.append(f'namespace="{namespace}"')
+            if pod_name:
+                filters.append(f'pod=~".*{pod_name}.*"')
+
+            filter_str = ",".join(filters)
+
+            # Test a sample of metrics to see which ones have data with filters
+            test_metrics = all_metrics[: min(100, len(all_metrics))]  # Test first 100
+
+            for metric_name in test_metrics:
+                try:
+                    # Quick test query to see if this metric exists with filters
+                    test_query = f"{metric_name}{{{filter_str}}}"
+                    test_params = {"query": test_query}
+
+                    test_response = self.client.get(
+                        f"{self.prometheus_url}/api/v1/query", params=test_params
+                    )
+                    test_response.raise_for_status()
+
+                    test_result = test_response.json()
+                    if test_result.get("status") == "success" and test_result.get(
+                        "data", {}
+                    ).get("result"):
+                        filtered_metrics.append(metric_name)
+
+                        # Stop if we've found enough metrics
+                        if len(filtered_metrics) >= limit:
+                            break
+
+                except Exception:
+                    # If individual metric test fails, skip it
+                    continue
+
+            return {
+                "status": "success",
+                "total_metrics_tested": len(test_metrics),
+                "filtered_metrics": len(filtered_metrics),
+                "namespace_filter": namespace,
+                "pod_name_filter": pod_name,
+                "metric_name_filter": metric_name,
+                "metrics": filtered_metrics,
+                "note": (
+                    "Filtered results based on metrics that have data "
+                    f"matching the specified filters. Tested {len(test_metrics)} "
+                    f"out of {len(all_metrics)} total available metrics."
+                ),
+            }
+
+        except Exception as e:
+            logger.error("Failed to get metric names", error=str(e))
+            return {"status": "error", "error": str(e)}
+
+    async def get_targets(self) -> dict[str, Any]:
+        """
+        Get information about Prometheus targets (scraped endpoints).
+
+        This method queries the Prometheus /api/v1/targets endpoint to retrieve
+        information about all targets being scraped by Prometheus, including
+        their health status, discovery labels, and scrape information.
+
+        Returns:
+            Dictionary containing targets information with status and details.
+        """
+        try:
+            logger.info("Querying Prometheus targets")
+
+            response = self.client.get(f"{self.prometheus_url}/api/v1/targets")
+            response.raise_for_status()
+
+            result = response.json()
+
+            if result.get("status") != "success":
+                return {
+                    "status": "error",
+                    "error": result.get("error", "Failed to get targets"),
+                }
+
+            targets_data = result.get("data", {})
+            active_targets = targets_data.get("activeTargets", [])
+            dropped_targets = targets_data.get("droppedTargets", [])
+
+            # Count targets by health status
+            healthy_targets = sum(
+                1 for target in active_targets if target.get("health") == "up"
+            )
+            unhealthy_targets = sum(
+                1 for target in active_targets if target.get("health") == "down"
+            )
+
+            # Organize active targets by job
+            targets_by_job = {}
+            for target in active_targets:
+                job_name = target.get("labels", {}).get("job", "unknown")
+                if job_name not in targets_by_job:
+                    targets_by_job[job_name] = []
+
+                # Extract useful target information
+                target_info = {
+                    "instance": target.get("labels", {}).get("instance", "unknown"),
+                    "health": target.get("health", "unknown"),
+                    "scrape_url": target.get("scrapeUrl", ""),
+                    "last_scrape": target.get("lastScrape", ""),
+                    "scrape_duration": target.get("scrapeDuration", ""),
+                    "last_error": target.get("lastError", ""),
+                    "labels": target.get("labels", {}),
+                }
+                targets_by_job[job_name].append(target_info)
+
+            return {
+                "status": "success",
+                "summary": {
+                    "total_active_targets": len(active_targets),
+                    "total_dropped_targets": len(dropped_targets),
+                    "healthy_targets": healthy_targets,
+                    "unhealthy_targets": unhealthy_targets,
+                    "jobs_count": len(targets_by_job),
+                },
+                "targets_by_job": targets_by_job,
+                "prometheus_url": self.prometheus_url,
+                "query_timestamp": datetime.now(UTC).isoformat(),
+            }
+
+        except Exception as e:
+            logger.error("Failed to get targets", error=str(e))
             return {"status": "error", "error": str(e)}
 
     def __del__(self):

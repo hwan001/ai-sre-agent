@@ -5,9 +5,8 @@ This module provides helper functions to integrate PrometheusTools
 with AutoGen Assistant Agents.
 """
 
-import asyncio
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
 from .prometheus import PrometheusTools
 
@@ -24,15 +23,21 @@ def get_prometheus_tools(prometheus_url: str | None = None) -> PrometheusTools:
 
 
 # AutoGen agent tool functions
-def prometheus_query_specific_metrics(
-    metric_names: list[str],
-    start_time: str | datetime | int | float | None = None,
-    end_time: str | datetime | int | float | None = None,
-    namespace: str | None = None,
-    pod_name: str | None = None,
-    limit_per_metric: int = 50,
-    step: str = "1m",
-    prometheus_url: str | None = None,
+async def prometheus_query_specific_metrics(
+    metric_names: Annotated[
+        list[str], "List of metric names to query (e.g., ['up', 'node_load1'])"
+    ],
+    start_time: Annotated[
+        str | datetime | int | float | None, "Start time for metrics query"
+    ] = None,
+    end_time: Annotated[
+        str | datetime | int | float | None, "End time for metrics query"
+    ] = None,
+    namespace: Annotated[str | None, "Kubernetes namespace filter"] = None,
+    pod_name: Annotated[str | None, "Pod name filter (supports wildcards)"] = None,
+    limit_per_metric: Annotated[int, "Maximum time series per metric"] = 50,
+    step: Annotated[str, "Query resolution step (e.g., '1m', '5m')"] = "1m",
+    prometheus_url: Annotated[str | None, "Prometheus server URL"] = None,
 ) -> dict[str, Any]:
     """
     Query specific Prometheus metrics efficiently.
@@ -54,26 +59,28 @@ def prometheus_query_specific_metrics(
         Dictionary with metrics organized by name, avoiding data overload.
     """
     tools = get_prometheus_tools(prometheus_url)
-    return asyncio.run(
-        tools.query_multiple_metrics(
-            metric_names,
-            start_time,
-            end_time,
-            namespace,
-            pod_name,
-            limit_per_metric,
-            step,
-        )
+    return await tools.query_multiple_metrics(
+        metric_names,
+        start_time,
+        end_time,
+        namespace,
+        pod_name,
+        limit_per_metric,
+        step,
     )
 
 
-def prometheus_get_essential_metrics(
-    namespace: str | None = None,
-    pod_name: str | None = None,
-    start_time: str | datetime | int | float | None = None,
-    end_time: str | datetime | int | float | None = None,
-    step: str = "1m",
-    prometheus_url: str | None = None,
+async def prometheus_get_essential_metrics(
+    namespace: Annotated[str | None, "Kubernetes namespace filter"] = None,
+    pod_name: Annotated[str | None, "Pod name filter (supports wildcards)"] = None,
+    start_time: Annotated[
+        str | datetime | int | float | None, "Start time for metrics query"
+    ] = None,
+    end_time: Annotated[
+        str | datetime | int | float | None, "End time for metrics query"
+    ] = None,
+    step: Annotated[str, "Query resolution step (e.g., '1m', '5m')"] = "1m",
+    prometheus_url: Annotated[str | None, "Prometheus server URL"] = None,
 ) -> dict[str, Any]:
     """
     Get essential system metrics with calculated percentages.
@@ -93,70 +100,61 @@ def prometheus_get_essential_metrics(
         Dictionary with essential calculated metrics, limited data volume.
     """
     tools = get_prometheus_tools(prometheus_url)
-    return asyncio.run(
-        tools.query_essential_metrics(namespace, pod_name, start_time, end_time, step)
+    return await tools.query_essential_metrics(
+        namespace, pod_name, start_time, end_time, step
     )
 
 
-def prometheus_get_metric_names(
-    namespace: str | None = None,
-    pod_name: str | None = None,
-    prometheus_url: str | None = None,
+async def prometheus_get_metric_names(
+    namespace: Annotated[str | None, "Filter metrics by namespace"] = None,
+    pod_name: Annotated[str | None, "Filter metrics by pod name pattern"] = None,
+    metric_name: Annotated[
+        str | None, "Filter metrics by name pattern (supports * and ?)"
+    ] = None,
+    limit: Annotated[int, "Maximum number of metric names to return"] = 1000,
+    prometheus_url: Annotated[str | None, "Prometheus server URL"] = None,
 ) -> dict[str, Any]:
     """
     Get list of available metric names from Prometheus.
 
-    Note: This is a placeholder implementation. The original metric names
-    functionality was removed with the deprecated PrometheusTools class.
+    This function queries the Prometheus /api/v1/label/__name__/values endpoint
+    to retrieve all available metric names. Can optionally filter by namespace,
+    pod name, and metric name pattern.
 
     Args:
         namespace: Filter metrics by namespace. Optional.
         pod_name: Filter metrics by pod name pattern. Optional.
+        metric_name: Filter metrics by name pattern (supports * and ?). Optional.
+        limit: Maximum number of metric names to return (default: 1000).
         prometheus_url: Prometheus server URL. Optional.
 
     Returns:
-        Dictionary containing placeholder response.
+        Dictionary containing available metric names and filter information.
     """
-    return {
-        "status": "success",
-        "total_metrics": 0,
-        "namespace_filter": namespace,
-        "pod_name_filter": pod_name,
-        "metrics": [],
-        "note": (
-            "Metric names listing not implemented in enhanced version. "
-            "Use specific metric names instead."
-        ),
-    }
+    tools = get_prometheus_tools(prometheus_url)
+    return await tools.get_metric_names(namespace, pod_name, metric_name, limit)
 
 
-def prometheus_get_targets(prometheus_url: str | None = None) -> dict[str, Any]:
+async def prometheus_get_targets(
+    prometheus_url: Annotated[
+        str | None, "Prometheus server URL. If None, uses default from settings"
+    ] = None,
+) -> dict[str, Any]:
     """
     Get information about Prometheus targets (scraped endpoints).
 
-    Note: This is a placeholder implementation. The original targets
-    functionality was removed with the deprecated PrometheusTools class.
+    This function queries the Prometheus /api/v1/targets endpoint to retrieve
+    information about all targets being scraped by Prometheus, including
+    their health status, discovery labels, and scrape information.
 
     Args:
-        prometheus_url: Prometheus server URL. Optional.
+        prometheus_url: Prometheus server URL. If None, uses default from settings.
 
     Returns:
-        Dictionary containing placeholder response.
+        Dictionary containing targets information organized by job.
     """
-    return {
-        "status": "success",
-        "summary": {
-            "active_targets": 0,
-            "dropped_targets": 0,
-            "healthy_targets": 0,
-            "unhealthy_targets": 0,
-        },
-        "active_targets": [],
-        "note": (
-            "Targets listing not implemented in enhanced version. "
-            "Focus on specific metrics instead."
-        ),
-    }
+    tools = get_prometheus_tools(prometheus_url)
+    return await tools.get_targets()
 
 
 # Tool registration helper for AutoGen agents
@@ -172,7 +170,7 @@ def get_prometheus_tools_for_agent() -> list:
     return [
         prometheus_query_specific_metrics,
         prometheus_get_essential_metrics,
-        # Note: get_metric_names and get_targets return placeholder responses
+        # Enhanced metric discovery and targets functionality
         prometheus_get_metric_names,
         prometheus_get_targets,
     ]
@@ -199,7 +197,14 @@ RECOMMENDED: Use efficient enhanced tools for better performance
        pod_name="database"
    )
 
-3. Query metrics with time range:
+3. Discover available metrics:
+   prometheus_get_metric_names(
+       namespace="production",
+       pod_name="web-server",
+       limit=500
+   )
+
+4. Query metrics with time range:
    prometheus_query_specific_metrics(
        metric_names=['node_cpu_seconds_total'],
        start_time="2024-01-01 10:00:00",
@@ -207,7 +212,7 @@ RECOMMENDED: Use efficient enhanced tools for better performance
        step="5m"
    )
 
-4. Use with custom Prometheus URL:
+5. Use with custom Prometheus URL:
    prometheus_query_specific_metrics(
        metric_names=['up'],
        prometheus_url="http://monitoring.example.com:9090"
@@ -219,13 +224,14 @@ All functions return a dictionary with:
 - For success: query_info, metrics data organized by metric name
 - For error: error message and context
 
-Benefits of  Tools:
+Benefits of Enhanced Tools:
 - Individual queries per metric (no inefficient OR queries)
 - Configurable data limits (limit_per_metric parameter)
 - Pre-calculated percentages for system monitoring
 - Better error handling per metric
 - Reduced Prometheus server load
 - Kubernetes-aware filtering by namespace and pod name
+- Metric discovery functionality for observability gap analysis
 """
 
 
