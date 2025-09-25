@@ -27,6 +27,7 @@ from autogen_ext.models.openai import AzureOpenAIChatCompletionClient
 
 from ..agents.analysis import AnalysisAgent
 from ..config import get_settings
+from ..plugins.loki_client import get_loki_tools
 
 logger = structlog.get_logger()
 
@@ -46,6 +47,7 @@ class SREWorkflow:
     def __init__(self):
         self.settings = get_settings()
         self._model_clients = []  # Track model clients for cleanup
+        self.loki_tools = get_loki_tools(mock=self.settings.monitoring.loki_mock)
         self.agents = self._create_agents()
         self.team = self._create_team()
 
@@ -62,6 +64,7 @@ class SREWorkflow:
             raise ValueError(
                 "Azure OpenAI configuration missing. Please set AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT environment variables."
             )
+        loki_tools = self.loki_tools
 
         analysis_model_client = AzureOpenAIChatCompletionClient(
             model="gpt-4o",  # or your deployed model name
@@ -78,7 +81,8 @@ class SREWorkflow:
         analysis_agent = AnalysisAgent(
             name="analysis_agent",
             description="SRE analysis agent specialized in Kubernetes troubleshooting.",
-            model_client=analysis_model_client
+            model_client=analysis_model_client,
+            tools=loki_tools  # Add Loki tools to the agent
         )
 
         # Create other placeholder agents
@@ -96,7 +100,8 @@ class SREWorkflow:
         recommendation_agent = AssistantAgent(
             name="recommendation_agent",
             description="Suggest remediation actions based on analysis.",
-            model_client=recommendation_model_client
+            model_client=recommendation_model_client,
+            tools=loki_tools  # Add Loki tools to the agent
         )
 
         return {
@@ -144,6 +149,12 @@ class SREWorkflow:
         Event Data: {event_data}
 
         Please analyze this incident and recommend appropriate actions.
+        You have access to Loki log analysis tools:
+        - analyze_pod_errors_tool(namespace, pod_name, time_window_minutes): Analyze error logs for a specific pod
+        - get_application_logs_tool(app_label, namespace, log_level, time_window_minutes): Get application logs
+        - search_logs_by_pattern_tool(pattern, namespace, time_window_minutes): Search logs by regex pattern
+        
+        Use these tools to gather additional context from logs before making recommendations.        
         """
 
         try:
@@ -211,7 +222,8 @@ class SREWorkflow:
                 "decision": decision,
                 "confidence": confidence,
                 "recommended_actions": recommended_actions,
-                "reasoning": f"Multi-agent team analysis: {last_content[:200]}...",
+                #"reasoning": f"Multi-agent team analysis: {last_content[:200]}...",
+                "reasoning": f"Multi-agent team analysis: {last_content}",
                 "full_conversation": [str(msg) for msg in task_result.messages]
             }
 
@@ -231,3 +243,8 @@ class SREWorkflow:
                 await client.close()
             except Exception as e:
                 logger.warning("Error closing model client", error=str(e))
+        # Close Loki tools
+        try:
+            await self.loki_tools.close()
+        except Exception as e:
+            logger.warning("Error closing Loki tools", error=str(e))
