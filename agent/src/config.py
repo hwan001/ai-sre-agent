@@ -86,7 +86,10 @@ class MonitoringSettings(BaseSettings):
 
     grafana_url: str | None = None
     grafana_api_key: str | None = None
-
+    
+    # Loki settings
+    loki_url: str = "http://loki:3100"
+    loki_mock: bool = True
 
 class AzureSettings(BaseSettings):
     """Azure integration settings."""
