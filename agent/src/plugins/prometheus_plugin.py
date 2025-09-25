@@ -8,7 +8,7 @@ with AutoGen Assistant Agents.
 from datetime import datetime
 from typing import Annotated, Any
 
-from .prometheus import PrometheusTools
+from .prometheus_client import PrometheusTools
 
 # Global instance for reuse across agent calls
 _prometheus_tools_instance: PrometheusTools | None = None

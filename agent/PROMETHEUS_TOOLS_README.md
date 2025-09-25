@@ -1,10 +1,10 @@
-# Prometheus Tools Workflow Documentation
+# Prometheus Plugin Workflow Documentation
 
 본 문서는 AI SRE Agent에서 Prometheus 모니터링 데이터를 효율적으로 수집하고 분석하기 위한 도구들의 워크플로우를 설명합니다.
 
 ## 도구 워크플로우 개요
 
-Prometheus Tools는 4단계의 체계적인 접근 방식을 통해 시스템 모니터링과 문제 진단을 수행합니다:
+Prometheus Plugin은 4단계의 체계적인 접근 방식을 통해 시스템 모니터링과 문제 진단을 수행합니다:
 
 1. **기본 시스템 메트릭 수집** (`prometheus_get_essential_metrics`)
 2. **메트릭 이름 탐색** (`prometheus_get_metric_names`) 
