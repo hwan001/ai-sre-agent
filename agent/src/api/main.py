@@ -23,7 +23,7 @@ if __name__ == "__main__":
 
 # Use absolute imports - pyproject.toml includes src in pythonpath
 from configs.config import get_settings
-from tools.metrics.prometheus_agent_tools import (
+from plugins.prometheus_plugin import (
     prometheus_get_essential_metrics,
     prometheus_get_metric_names,
     prometheus_get_targets,
@@ -47,8 +47,8 @@ app = FastAPI(
             "description": "Core SRE agent functionality",
         },
         {
-            "name": "prometheus-tools",
-            "description": "Prometheus agent tools for testing and monitoring",
+            "name": "prometheus-plugins",
+            "description": "Prometheus agent plugins for testing and monitoring",
         },
     ],
 )
@@ -93,7 +93,7 @@ class ExecutionResponse(BaseModel):
     rollback_available: bool
 
 
-# Prometheus Tools Request/Response Models
+# Prometheus plugins Request/Response Models
 class PrometheusQueryRequest(BaseModel):
     """Request for querying specific Prometheus metrics."""
 
@@ -214,8 +214,8 @@ async def execute(request: ExecutionRequest) -> ExecutionResponse:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-# Prometheus Tools Endpoints
-@app.post("/tools/prometheus/query-metrics", tags=["prometheus-tools"])
+# Prometheus Plugins Endpoints
+@app.post("/plugins/prometheus/query-metrics", tags=["prometheus-plugins"])
 async def query_prometheus_metrics(request: PrometheusQueryRequest) -> dict[str, Any]:
     """
     Query specific Prometheus metrics efficiently.
@@ -248,7 +248,7 @@ async def query_prometheus_metrics(request: PrometheusQueryRequest) -> dict[str,
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@app.post("/tools/prometheus/essential-metrics", tags=["prometheus-tools"])
+@app.post("/plugins/prometheus/essential-metrics", tags=["prometheus-plugins"])
 async def get_essential_metrics(
     request: PrometheusEssentialMetricsRequest,
 ) -> dict[str, Any]:
@@ -280,7 +280,7 @@ async def get_essential_metrics(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@app.post("/tools/prometheus/metric-names", tags=["prometheus-tools"])
+@app.post("/plugins/prometheus/metric-names", tags=["prometheus-plugins"])
 async def get_metric_names(request: PrometheusMetricNamesRequest) -> dict[str, Any]:
     """
     Get list of available metric names from Prometheus.
@@ -309,7 +309,7 @@ async def get_metric_names(request: PrometheusMetricNamesRequest) -> dict[str, A
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@app.post("/tools/prometheus/targets", tags=["prometheus-tools"])
+@app.post("/plugins/prometheus/targets", tags=["prometheus-plugins"])
 async def get_targets(request: PrometheusTargetsRequest) -> dict[str, Any]:
     """
     Get information about Prometheus targets (scraped endpoints).
@@ -326,56 +326,6 @@ async def get_targets(request: PrometheusTargetsRequest) -> dict[str, Any]:
     except Exception as e:
         logger.error("Prometheus targets query failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-@app.get("/tools/prometheus/examples", tags=["prometheus-tools"])
-async def get_examples() -> dict[str, Any]:
-    """
-    Get usage examples for Prometheus tools.
-
-    Provides example requests and expected responses to help with testing.
-    """
-    examples = {
-        "query_metrics": {
-            "description": "Query specific metrics efficiently",
-            "example_request": {
-                "metric_names": ["up", "node_load1", "node_memory_MemAvailable_bytes"],
-                "namespace": "production",
-                "pod_name": "web-server",
-                "limit_per_metric": 50,
-                "step": "1m",
-            },
-            "common_metrics": [
-                "up",
-                "node_load1",
-                "node_load5",
-                "node_load15",
-                "node_memory_MemTotal_bytes",
-                "node_memory_MemAvailable_bytes",
-                "node_cpu_seconds_total",
-                "container_cpu_usage_seconds_total",
-                "container_memory_usage_bytes",
-                "kube_pod_status_phase",
-            ],
-        },
-        "essential_metrics": {
-            "description": "Get essential system metrics with calculated percentages",
-            "example_request": {
-                "namespace": "production",
-                "pod_name": "database",
-                "step": "5m",
-            },
-            "returns": [
-                "CPU usage percentage",
-                "Memory usage percentage",
-                "Disk usage percentage",
-                "System availability",
-                "Load averages",
-            ],
-        },
-    }
-
-    return examples
 
 
 if __name__ == "__main__":
