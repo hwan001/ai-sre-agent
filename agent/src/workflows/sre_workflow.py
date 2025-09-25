@@ -27,6 +27,8 @@ from autogen_ext.models.openai import AzureOpenAIChatCompletionClient
 
 from ..agents.analysis import AnalysisAgent
 from ..config import get_settings
+from ..plugins.loki_client import get_loki_tools
+from ..plugins.log_summarizer import get_log_summarizer_tools
 
 logger = structlog.get_logger()
 
@@ -46,6 +48,8 @@ class SREWorkflow:
     def __init__(self):
         self.settings = get_settings()
         self._model_clients = []  # Track model clients for cleanup
+        self.loki_tools = get_loki_tools(mock=self.settings.monitoring.loki_mock)
+        self.log_summarizer_tools = get_log_summarizer_tools()
         self.agents = self._create_agents()
         self.team = self._create_team()
 
@@ -62,6 +66,7 @@ class SREWorkflow:
             raise ValueError(
                 "Azure OpenAI configuration missing. Please set AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT environment variables."
             )
+        all_tools = self.loki_tools + self.log_summarizer_tools
 
         analysis_model_client = AzureOpenAIChatCompletionClient(
             model="gpt-4o",  # or your deployed model name
@@ -78,7 +83,8 @@ class SREWorkflow:
         analysis_agent = AnalysisAgent(
             name="analysis_agent",
             description="SRE analysis agent specialized in Kubernetes troubleshooting.",
-            model_client=analysis_model_client
+            model_client=analysis_model_client,
+            tools=all_tools
         )
 
         # Create other placeholder agents
@@ -96,7 +102,8 @@ class SREWorkflow:
         recommendation_agent = AssistantAgent(
             name="recommendation_agent",
             description="Suggest remediation actions based on analysis.",
-            model_client=recommendation_model_client
+            model_client=recommendation_model_client,
+            tools=all_tools
         )
 
         return {
@@ -143,7 +150,32 @@ class SREWorkflow:
         Resource: {resource_name}
         Event Data: {event_data}
 
-        Please analyze this incident and recommend appropriate actions.
+        Please analyze this incident comprehensively. You have access to:
+        
+        **Log Collection Tools (Loki):**
+        - analyze_pod_errors(namespace, pod_name, time_window_minutes): Get error logs for specific pods
+        - get_application_logs(app_label, namespace, log_level, time_window_minutes): Get application logs
+        - search_logs_by_pattern(pattern, namespace, time_window_minutes): Search logs by patterns
+        
+        **Advanced Log Analysis Tools (LLM-powered):**
+        - summarize_error_logs(error_logs, incident_context, time_window_minutes): AI-powered error analysis
+        - summarize_application_logs(app_logs, application_name, analysis_focus): Application-specific insights
+        - analyze_log_patterns(log_entries, pattern_description, severity_focus): Pattern analysis
+        - comprehensive_log_analysis(all_logs, incident_summary, affected_components): Holistic analysis
+        
+        **Recommended Workflow:**
+        1. First, collect relevant logs using Loki tools
+        2. Then use LLM-powered analysis tools to get intelligent insights from the collected logs
+        3. Combine findings for comprehensive incident analysis
+        4. Provide actionable recommendations based on AI analysis
+        
+        The AI analysis tools will provide:
+        - Root cause identification
+        - Business impact assessment
+        - Priority-based action plans
+        - Cross-component correlation analysis
+        
+        Start by analyzing the incident and using the appropriate tools to gather comprehensive information.
         """
 
         try:
@@ -211,7 +243,8 @@ class SREWorkflow:
                 "decision": decision,
                 "confidence": confidence,
                 "recommended_actions": recommended_actions,
-                "reasoning": f"Multi-agent team analysis: {last_content[:200]}...",
+                #"reasoning": f"Multi-agent team analysis: {last_content[:200]}...",
+                "reasoning": f"Multi-agent team analysis with AI-powered log analysis: {last_content}",
                 "full_conversation": [str(msg) for msg in task_result.messages]
             }
 
@@ -231,3 +264,16 @@ class SREWorkflow:
                 await client.close()
             except Exception as e:
                 logger.warning("Error closing model client", error=str(e))
+        # Close Loki tools
+        try:
+            await self.loki_tools.close()
+        except Exception as e:
+            logger.warning("Error closing Loki tools", error=str(e))
+        try:
+            # Log summarizer tools may not have close method if they're just functions
+            if hasattr(self.log_summarizer_tools, 'close'):
+                await self.log_summarizer_tools.close()
+        except Exception as e:
+            logger.warning("Error closing log summarizer tools", error=str(e))
+        
+        logger.info("SRE Workflow closed")            
