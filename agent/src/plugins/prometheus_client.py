@@ -86,6 +86,16 @@ class PrometheusTools:
         else:
             raise TypeError(f"Unsupported datetime type: {type(dt_input)}")
 
+    def _is_valid_datetime_value(self, value) -> bool:
+        """Check if a datetime value is meaningful and not a placeholder."""
+        if value is None:
+            return False
+        if isinstance(value, str):
+            value = value.strip()
+            invalid_values = ["string", "none", "null", ""]
+            return bool(value) and value.lower() not in invalid_values
+        return True
+
     async def query_multiple_metrics(
         self,
         metric_names: Annotated[
@@ -149,20 +159,8 @@ class PrometheusTools:
                     params = {"query": query}
 
                     if start_time is not None or end_time is not None:
-                        # Helper function to check if a datetime value is meaningful
-                        def is_valid_datetime_value(value):
-                            if value is None:
-                                return False
-                            if isinstance(value, str):
-                                value = value.strip()
-                                invalid_values = ["string", "none", "null", ""]
-                                return (
-                                    bool(value) and value.lower() not in invalid_values
-                                )
-                            return True
-
                         if (
-                            is_valid_datetime_value(start_time)
+                            self._is_valid_datetime_value(start_time)
                             and start_time is not None
                         ):
                             start_dt = self._parse_datetime_input(start_time)
@@ -172,7 +170,10 @@ class PrometheusTools:
                             start_dt = datetime.now(UTC) - timedelta(hours=1)
                             params["start"] = self._format_datetime(start_dt)
 
-                        if is_valid_datetime_value(end_time) and end_time is not None:
+                        if (
+                            self._is_valid_datetime_value(end_time)
+                            and end_time is not None
+                        ):
                             end_dt = self._parse_datetime_input(end_time)
                             params["end"] = self._format_datetime(end_dt)
                         else:
@@ -249,7 +250,7 @@ class PrometheusTools:
                         "Error querying metric", metric_name=metric_name, error=str(e)
                     )
                     results["metrics_by_name"][metric_name] = {
-                        "query": query if "query" in locals() else metric_name,
+                        "query": query,
                         "error": str(e),
                     }
 
@@ -383,20 +384,8 @@ class PrometheusTools:
                     params = {"query": query}
 
                     if start_time is not None or end_time is not None:
-                        # Helper function to check if a datetime value is meaningful
-                        def is_valid_datetime_value(value):
-                            if value is None:
-                                return False
-                            if isinstance(value, str):
-                                value = value.strip()
-                                invalid_values = ["string", "none", "null", ""]
-                                return (
-                                    bool(value) and value.lower() not in invalid_values
-                                )
-                            return True
-
                         if (
-                            is_valid_datetime_value(start_time)
+                            self._is_valid_datetime_value(start_time)
                             and start_time is not None
                         ):
                             start_dt = self._parse_datetime_input(start_time)
@@ -405,7 +394,10 @@ class PrometheusTools:
                             start_dt = datetime.now(UTC) - timedelta(hours=1)
                             params["start"] = self._format_datetime(start_dt)
 
-                        if is_valid_datetime_value(end_time) and end_time is not None:
+                        if (
+                            self._is_valid_datetime_value(end_time)
+                            and end_time is not None
+                        ):
                             end_dt = self._parse_datetime_input(end_time)
                             params["end"] = self._format_datetime(end_dt)
                         else:

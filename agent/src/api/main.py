@@ -6,20 +6,12 @@ Provides REST API for the Kubernetes Operator to interact with the agent.
 
 from __future__ import annotations
 
-import sys
 import uuid
-from pathlib import Path
 from typing import Any
 
 import structlog
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-
-# Production에서는 패키지 설치 후 사용하거나 PYTHONPATH 환경변수 설정 권장
-# 직접 실행 시에만 임시로 경로 추가
-if __name__ == "__main__":
-    project_root = Path(__file__).parent.parent.parent
-    sys.path.insert(0, str(project_root))
 
 # Use absolute imports - pyproject.toml includes src in pythonpath
 from configs.config import get_settings
@@ -333,8 +325,9 @@ if __name__ == "__main__":
     # For development, use dev.py instead for hot-reload and debug features
     import uvicorn
 
+    # When run as python -m src.api.main, use the app directly
     uvicorn.run(
-        "main:app",
+        app,
         host=settings.api.host,
         port=settings.api.port,
         reload=False,  # No reload in direct execution
