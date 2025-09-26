@@ -38,7 +38,7 @@ for env_file in env_files:
 class LLMSettings(BaseSettings):
     """LLM provider configuration."""
 
-    # Azure OpenAI settings (현재 유일한 LLM 제공자)
+    # Azure OpenAI settings (currently the only LLM provider)
     azure_openai_endpoint: str | None = None
     azure_openai_api_key: str | None = None
     azure_openai_api_version: str = "2024-02-15-preview"
