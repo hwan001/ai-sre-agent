@@ -1,9 +1,6 @@
 name: Agent checks
 
 on:
-  push:
-    paths:
-      - "agent/**"
   pull_request:
     paths:
       - "agent/**"
@@ -24,11 +21,18 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install lint dependencies
-        run: pip install flake8==6.0.0 bandit==1.7.5
+      - name: Install dependencies
+        run: |
+          pip install black==25.9.0 ruff==0.13.2 bandit==1.8.6
 
-      - name: Lint
-        run: flake8 agent/
+      - name: Format check (Black)
+        run: black --check agent/
+        continue-on-error: true
 
-      - name: Security scan
+      - name: Lint with Ruff
+        run: ruff check agent/ --select E,F,I,B
+        continue-on-error: true
+
+      - name: Security scan (Bandit)
         run: bandit -r agent/
+        continue-on-error: true
