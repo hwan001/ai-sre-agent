@@ -3,8 +3,8 @@ replicaCount: 1
 
 # Container image
 image:
-  repository: ghcr.io/k8s-lovers-korea/ai-sre-agent
-  tag: latest
+  repository: ghcr.io/k8s-lovers-korea/ai-sre-agent/agent
+  tag: 0.0.1
   pullPolicy: IfNotPresent
 
 # Service settings
@@ -101,3 +101,8 @@ ingress:
   #   - secretName: sre-agent-tls
   #     hosts:
   #       - sre-agent.example.com
+
+securityContext:
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
