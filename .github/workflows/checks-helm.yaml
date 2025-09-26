@@ -1,4 +1,5 @@
 name: Helm checks
+
 on:
   pull_request:
     paths:
@@ -17,17 +18,24 @@ jobs:
 
       - name: Set up Helm
         uses: azure/setup-helm@v4
+        with:
+          version: v3.15.4
 
       - name: Install yamllint
         run: pip install yamllint
 
-      - name: Check YAML formatting and validity
-        run: yamllint charts/
+      - name: Check YAML formatting and validity (only pure YAML)
+        run: |
+          yamllint charts/**/values.yaml
+          yamllint charts/**/Chart.yaml
 
-      - name: Lint Helm Chart
-        run: helm lint charts/operator
+      - name: Lint all Helm Charts
+        run: |
+          for chart in charts/*; do
+            helm lint "$chart"
+          done
 
-      - name: Scan Helm chart with kube-linter
+      - name: Scan all Helm charts with kube-linter
         uses: stackrox/kube-linter-action@v1
         with:
-          directory: charts/operator
+          directory: charts

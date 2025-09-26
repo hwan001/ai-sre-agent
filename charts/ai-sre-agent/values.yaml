@@ -1,0 +1,103 @@
+# Replica count
+replicaCount: 1
+
+# Container image
+image:
+  repository: ghcr.io/k8s-lovers-korea/ai-sre-agent
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Service settings
+service:
+  type: ClusterIP
+  port: 8000
+
+# Resource requests/limits
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Probes (uncomment if your app has /healthz and /readyz endpoints)
+# livenessProbe:
+#   httpGet:
+#     path: /healthz
+#     port: http
+#   initialDelaySeconds: 10
+#   periodSeconds: 10
+#
+# readinessProbe:
+#   httpGet:
+#     path: /readyz
+#     port: http
+#   initialDelaySeconds: 5
+#   periodSeconds: 5
+
+# Environment variables (ConfigMap)
+env:
+  # === LLM Provider Settings ===
+  # Azure OpenAI
+  AZURE_OPENAI_ENDPOINT: "https://your-instance.openai.azure.com/"
+  AZURE_OPENAI_API_VERSION: "2024-02-15-preview"
+  OPENAI_MODEL: "gpt-4"
+
+  # === API Server Settings ===
+  API_HOST: "0.0.0.0"
+  API_PORT: "8000"
+  API_RELOAD: "false"
+  LOG_LEVEL: "INFO"
+
+  # === Agent Behavior ===
+  # Safety settings
+  ENABLE_DRY_RUN: "true"
+  REQUIRE_HUMAN_APPROVAL: "true"
+  MAX_CONCURRENT_ACTIONS: "3"
+  ACTION_TIMEOUT_SECONDS: "300"
+
+  # Rate limiting
+  RATE_LIMIT_WINDOW_MINUTES: "5"
+  RATE_LIMIT_MAX_ACTIONS: "10"
+
+  # === Monitoring Integration ===
+  PROMETHEUS_URL: "http://prometheus:9090"
+  PROMETHEUS_TIMEOUT: "30"
+  GRAFANA_URL: "http://grafana:3000"
+  LOKI_URL: "http://your-loki:3100"
+  LOKI_MOCK: "true"
+
+  # === Azure Integration (Optional) ===
+  AZURE_KEY_VAULT_URL: "https://your-keyvault.vault.azure.net/"
+
+  # === Development Settings ===
+  DEBUG: "false"
+  ENABLE_DEBUG_LOGS: "false"
+  TEST_MODE: "false"
+  MOCK_K8S_API: "false"
+
+# Secrets (Kubernetes Secret)
+secrets:
+  OPENAI_API_KEY: ""
+  GRAFANA_API_KEY: ""
+  AZURE_OPENAI_API_KEY: ""
+  AZURE_CLIENT_SECRET: ""
+  AZURE_CLIENT_ID: ""
+  AZURE_TENANT_ID: ""
+
+# Ingress (Nginx)
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: sre-agent.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  # tls:
+  #   - secretName: sre-agent-tls
+  #     hosts:
+  #       - sre-agent.example.com
