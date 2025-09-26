@@ -35,6 +35,12 @@ jobs:
             helm lint "$chart"
           done
 
+      - name: Dry-run Helm templates
+        run: |
+          for chart in charts/*; do
+            helm template "$chart" > /dev/null
+          done
+
       - name: Scan all Helm charts with kube-linter
         uses: stackrox/kube-linter-action@v1
         with:
