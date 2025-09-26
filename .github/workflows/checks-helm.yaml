@@ -21,6 +21,12 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@v4
 
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Check YAML formatting and validity
+        run: yamllint charts/
+
       - name: Lint Helm Chart
         run: helm lint charts/operator
 

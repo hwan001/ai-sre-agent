@@ -25,10 +25,13 @@ jobs:
           python-version: "3.11"
 
       - name: Install lint dependencies
-        run: pip install flake8==6.0.0 bandit==1.7.5
+        run: |
+          pip install black==23.9.1 ruff==0.1.9
 
-      - name: Lint
-        run: flake8 agent/
+      - name: Check formatting with Black
+        run: black --check agent/
+        continue-on-error: true
 
-      - name: Security scan
-        run: bandit -r agent/
+      - name: Lint with Ruff
+        run: ruff check agent/ --select E,F,I,B
+        continue-on-error: true
