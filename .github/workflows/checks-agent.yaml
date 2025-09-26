@@ -24,14 +24,18 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install lint dependencies
+      - name: Install dependencies
         run: |
-          pip install black==23.9.1 ruff==0.1.9
+          pip install black==25.9.0 ruff==0.13.2 bandit==1.8.6
 
-      - name: Check formatting with Black
+      - name: Format check (Black)
         run: black --check agent/
         continue-on-error: true
 
       - name: Lint with Ruff
         run: ruff check agent/ --select E,F,I,B
+        continue-on-error: true
+
+      - name: Security scan (Bandit)
+        run: bandit -r agent/
         continue-on-error: true
