@@ -140,7 +140,6 @@ class PrometheusTools:
                 endpoint_base = f"{self.prometheus_url}/api/v1/query_range"
 
             for metric_name in metric_names:
-                query = metric_name  # Initialize query variable
                 try:
                     # Build query for this specific metric with Kubernetes filters
                     filters = []
