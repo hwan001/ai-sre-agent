@@ -1,9 +1,6 @@
 name: Agent checks
 
 on:
-  push:
-    paths:
-      - "agent/**"
   pull_request:
     paths:
       - "agent/**"

@@ -1,9 +1,6 @@
 name: Operator checks
 
 on:
-  push:
-    paths:
-      - "operator/**"
   pull_request:
     paths:
       - "operator/**"

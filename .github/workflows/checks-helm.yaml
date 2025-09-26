@@ -1,8 +1,5 @@
 name: Helm checks
 on:
-  push:
-    paths:
-      - "charts/**"
   pull_request:
     paths:
       - "charts/**"
