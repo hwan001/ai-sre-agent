@@ -44,7 +44,6 @@ class PrometheusTools:
                 self.settings.monitoring.prometheus_url or "http://localhost:9090"
             )
 
-        self.client = httpx.Client(timeout=30.0)
         logger.info("Prometheus tools initialized", url=self.prometheus_url)
 
     def _format_datetime(self, dt: datetime) -> str:
@@ -99,7 +98,8 @@ class PrometheusTools:
     async def query_multiple_metrics(
         self,
         metric_names: Annotated[
-            list[str], "List of specific metric names to query efficiently"
+            list[str],
+            "List of specific metric names to query efficiently. Use ['auto'] for Pod metric discovery.",
         ],
         start_time: Annotated[
             str | datetime | int | float | None, "Start time for the query. Optional."
@@ -115,14 +115,127 @@ class PrometheusTools:
             int, "Maximum number of time series per metric (default: 50)"
         ] = 50,
         step: Annotated[str, "Query resolution step. Default: '1m'"] = "1m",
+        auto_discover: Annotated[
+            bool,
+            "Automatically discover Pod-related metrics when Pod name is provided (default: True)",
+        ] = True,
     ) -> dict[str, Any]:
         """
         Query multiple specific metrics efficiently (avoids OR queries).
 
         This executes separate queries for each metric, which is more efficient
-        than using OR operators in PromQL.
+        than using OR operators in PromQL. Supports automatic Pod metric discovery.
         """
         try:
+            # Track if auto-discovery will be performed
+            auto_discovery_performed = (
+                metric_names == ["auto"] and auto_discover and pod_name
+            )
+
+            # Handle auto-discovery for Pod metrics
+            if metric_names == ["auto"] and pod_name and auto_discover:
+                # Auto-discover Pod-related metrics
+                logger.info(
+                    "Auto-discovering metrics for Pod",
+                    pod_name=pod_name,
+                    namespace=namespace,
+                )
+
+                # Get available metric names first
+                metric_names_result = await self.get_metric_names(
+                    namespace=namespace, limit=1000
+                )
+                if metric_names_result.get("status") != "success":
+                    return {
+                        "status": "error",
+                        "error": "Failed to get metric names for auto-discovery",
+                    }
+
+                all_metrics = metric_names_result.get("metrics", [])
+                discovered_metrics = []
+
+                # Use common Pod-related metric patterns
+                common_patterns = [
+                    "container_",
+                    "pod_",
+                    "node_",
+                    "up",
+                    "cpu",
+                    "memory",
+                    "network",
+                    "disk",
+                    "filesystem",
+                    "process",
+                    "load",
+                ]
+
+                # Filter metrics by patterns first
+                candidate_metrics = [
+                    m
+                    for m in all_metrics
+                    if any(pattern in m.lower() for pattern in common_patterns)
+                ][
+                    :100
+                ]  # Limit candidates
+
+                # Test each candidate with Pod filters
+                async with httpx.AsyncClient(timeout=30.0) as async_client:
+                    for metric_name in candidate_metrics:
+                        try:
+                            # Build test query with Pod filters
+                            filters = []
+                            if namespace:
+                                filters.append(f'namespace="{namespace}"')
+
+                            # Multiple Pod matching strategies
+                            pod_filters = []
+                            if "*" in pod_name or "?" in pod_name:
+                                pod_filters.append(f'pod=~"{pod_name}"')
+                            else:
+                                pod_filters.append(f'pod="{pod_name}"')
+
+                                # For node-exporter pods, also try instance matching
+                                if "node-exporter" in pod_name:
+                                    # Extract node identifier from pod name
+                                    node_id = pod_name.split("-")[-1]
+                                    pod_filters.append(f'instance=~".*{node_id}.*"')
+
+                            for pod_filter in pod_filters:
+                                test_filters = filters + [pod_filter]
+                                filter_str = ",".join(test_filters)
+                                query = f"{metric_name}{{{filter_str}}}"
+
+                                params = {"query": query}
+                                response = await async_client.get(
+                                    f"{self.prometheus_url}/api/v1/query", params=params
+                                )
+
+                                if response.status_code == 200:
+                                    result = response.json()
+                                    if result.get("status") == "success" and result.get(
+                                        "data", {}
+                                    ).get("result", []):
+                                        discovered_metrics.append(metric_name)
+                                        break  # Found with this strategy, move to next metric
+
+                        except Exception:
+                            continue
+
+                # Use discovered metrics or fallback to common node metrics
+                if discovered_metrics:
+                    metric_names = discovered_metrics[:20]  # Limit to most relevant
+                    logger.info("Auto-discovered Pod metrics", count=len(metric_names))
+                else:
+                    # Fallback to essential node metrics if nothing found
+                    metric_names = [
+                        "up",
+                        "node_memory_MemTotal_bytes",
+                        "node_memory_MemAvailable_bytes",
+                        "node_cpu_seconds_total",
+                        "node_load1",
+                    ]
+                    logger.info("Using fallback metrics for Pod", pod_name=pod_name)
+
             results = {
                 "status": "success",
                 "query_info": {
@@ -130,6 +243,7 @@ class PrometheusTools:
                     "pod_name_filter": pod_name,
                     "metrics_requested": len(metric_names),
                     "limit_per_metric": limit_per_metric,
+                    "auto_discovery_used": auto_discovery_performed,
                 },
                 "metrics_by_name": {},
             }
@@ -139,119 +253,130 @@ class PrometheusTools:
             if start_time is not None or end_time is not None:
                 endpoint_base = f"{self.prometheus_url}/api/v1/query_range"
 
-            for metric_name in metric_names:
-                try:
-                    # Build query for this specific metric with Kubernetes filters
-                    filters = []
-                    if namespace:
-                        filters.append(f'namespace="{namespace}"')
-                    if pod_name:
-                        filters.append(f'pod=~".*{pod_name}.*"')
+            # Execute queries using async client (like query_essential_metrics)
+            async with httpx.AsyncClient(timeout=30.0) as async_client:
+                for metric_name in metric_names:
+                    query = metric_name  # Initialize with basic metric name
+                    try:
+                        # Build query for this specific metric with Kubernetes filters
+                        filters = []
+                        if namespace:
+                            filters.append(f'namespace="{namespace}"')
+                        if pod_name:
+                            # Enhanced Pod matching (exact and flexible)
+                            if "*" in pod_name or "?" in pod_name:
+                                # Already contains wildcards, use as-is with regex
+                                filters.append(f'pod=~"{pod_name}"')
+                            else:
+                                # For exact pod name, try exact match first
+                                filters.append(f'pod="{pod_name}"')
 
-                    if filters:
-                        filter_str = ",".join(filters)
-                        query = f"{metric_name}{{{filter_str}}}"
-                    else:
-                        query = metric_name
-
-                    # Prepare query parameters
-                    params = {"query": query}
-
-                    if start_time is not None or end_time is not None:
-                        if (
-                            self._is_valid_datetime_value(start_time)
-                            and start_time is not None
-                        ):
-                            start_dt = self._parse_datetime_input(start_time)
-                            params["start"] = self._format_datetime(start_dt)
+                        if filters:
+                            filter_str = ",".join(filters)
+                            query = f"{metric_name}{{{filter_str}}}"
                         else:
-                            # Default to 1 hour ago
-                            start_dt = datetime.now(UTC) - timedelta(hours=1)
-                            params["start"] = self._format_datetime(start_dt)
+                            query = metric_name
 
-                        if (
-                            self._is_valid_datetime_value(end_time)
-                            and end_time is not None
-                        ):
-                            end_dt = self._parse_datetime_input(end_time)
-                            params["end"] = self._format_datetime(end_dt)
-                        else:
-                            # Default to now
-                            end_dt = datetime.now(UTC)
-                            params["end"] = self._format_datetime(end_dt)
+                        # Prepare query parameters
+                        params = {"query": query}
 
-                        params["step"] = step
+                        if start_time is not None or end_time is not None:
+                            if (
+                                self._is_valid_datetime_value(start_time)
+                                and start_time is not None
+                            ):
+                                start_dt = self._parse_datetime_input(start_time)
+                                params["start"] = self._format_datetime(start_dt)
+                            else:
+                                # Default to 1 hour ago
+                                start_dt = datetime.now(UTC) - timedelta(hours=1)
+                                params["start"] = self._format_datetime(start_dt)
 
-                    logger.debug(
-                        "Executing metric query",
-                        metric_name=metric_name,
-                        namespace=namespace,
-                        pod_name=pod_name,
-                    )
+                            if (
+                                self._is_valid_datetime_value(end_time)
+                                and end_time is not None
+                            ):
+                                end_dt = self._parse_datetime_input(end_time)
+                                params["end"] = self._format_datetime(end_dt)
+                            else:
+                                # Default to now
+                                end_dt = datetime.now(UTC)
+                                params["end"] = self._format_datetime(end_dt)
 
-                    # Execute the query
-                    response = self.client.get(endpoint_base, params=params)
-                    response.raise_for_status()
+                            params["step"] = step
 
-                    result = response.json()
+                        logger.debug(
+                            "Executing metric query",
+                            metric_name=metric_name,
+                            namespace=namespace,
+                            pod_name=pod_name,
+                        )
 
-                    if result.get("status") == "success":
-                        data = result.get("data", {})
-                        result_type = data.get("resultType")
-                        query_results = data.get("result", [])
+                        # Execute the query using async client
+                        response = await async_client.get(endpoint_base, params=params)
+                        response.raise_for_status()
 
-                        # Apply limit to prevent overwhelming response
-                        limited = len(query_results) > limit_per_metric
-                        if limited:
-                            query_results = query_results[:limit_per_metric]
+                        result = response.json()
 
-                        # Format results
-                        formatted_results = []
-                        for metric in query_results:
-                            metric_info = {
-                                "metric": metric.get("metric", {}),
-                                "values": [],
+                        if result.get("status") == "success":
+                            data = result.get("data", {})
+                            result_type = data.get("resultType")
+                            query_results = data.get("result", [])
+
+                            # Apply limit to prevent overwhelming response
+                            limited = len(query_results) > limit_per_metric
+                            if limited:
+                                query_results = query_results[:limit_per_metric]
+
+                            # Format results
+                            formatted_results = []
+                            for metric in query_results:
+                                metric_info = {
+                                    "metric": metric.get("metric", {}),
+                                    "values": [],
+                                }
+
+                                if result_type == "vector":
+                                    value = metric.get("value")
+                                    if value:
+                                        metric_info["values"] = [
+                                            {"timestamp": value[0], "value": value[1]}
+                                        ]
+                                elif result_type == "matrix":
+                                    values = metric.get("values", [])
+                                    metric_info["values"] = [
+                                        {"timestamp": ts, "value": val}
+                                        for ts, val in values
+                                    ]
+
+                                formatted_results.append(metric_info)
+
+                            results["metrics_by_name"][metric_name] = {
+                                "query": query,
+                                "result_type": result_type,
+                                "series_count": len(formatted_results),
+                                "limited": limited,
+                                "original_count": len(data.get("result", [])),
+                                "metrics": formatted_results,
                             }
 
-                            if result_type == "vector":
-                                value = metric.get("value")
-                                if value:
-                                    metric_info["values"] = [
-                                        {"timestamp": value[0], "value": value[1]}
-                                    ]
-                            elif result_type == "matrix":
-                                values = metric.get("values", [])
-                                metric_info["values"] = [
-                                    {"timestamp": ts, "value": val}
-                                    for ts, val in values
-                                ]
+                        else:
+                            error_msg = result.get("error", "Unknown error")
+                            results["metrics_by_name"][metric_name] = {
+                                "query": query,
+                                "error": error_msg,
+                            }
 
-                            formatted_results.append(metric_info)
-
+                    except Exception as e:
+                        logger.error(
+                            "Error querying metric",
+                            metric_name=metric_name,
+                            error=str(e),
+                        )
                         results["metrics_by_name"][metric_name] = {
                             "query": query,
-                            "result_type": result_type,
-                            "series_count": len(formatted_results),
-                            "limited": limited,
-                            "original_count": len(data.get("result", [])),
-                            "metrics": formatted_results,
+                            "error": str(e),
                         }
-
-                    else:
-                        error_msg = result.get("error", "Unknown error")
-                        results["metrics_by_name"][metric_name] = {
-                            "query": query,
-                            "error": error_msg,
-                        }
-
-                except Exception as e:
-                    logger.error(
-                        "Error querying metric", metric_name=metric_name, error=str(e)
-                    )
-                    results["metrics_by_name"][metric_name] = {
-                        "query": query,
-                        "error": str(e),
-                    }
 
             # Add summary
             successful = len(
@@ -313,7 +438,13 @@ class PrometheusTools:
             if namespace:
                 filters.append(f'namespace="{namespace}"')
             if pod_name:
-                filters.append(f'pod=~".*{pod_name}.*"')
+                # Support exact matching for complete pod names
+                if "*" in pod_name or "?" in pod_name:
+                    # Already contains wildcards, use as-is with regex
+                    filters.append(f'pod=~"{pod_name}"')
+                else:
+                    # For exact pod name, try exact match first
+                    filters.append(f'pod="{pod_name}"')
 
             filter_str = ""
             if filters:
@@ -377,91 +508,93 @@ class PrometheusTools:
             if start_time is not None or end_time is not None:
                 endpoint_base = f"{self.prometheus_url}/api/v1/query_range"
 
-            for metric_name, query in essential_queries.items():
-                try:
-                    # Prepare query parameters
-                    params = {"query": query}
+            # Execute queries using async client
+            async with httpx.AsyncClient(timeout=30.0) as async_client:
+                for metric_name, query in essential_queries.items():
+                    try:
+                        # Prepare query parameters
+                        params = {"query": query}
 
-                    if start_time is not None or end_time is not None:
-                        if (
-                            self._is_valid_datetime_value(start_time)
-                            and start_time is not None
-                        ):
-                            start_dt = self._parse_datetime_input(start_time)
-                            params["start"] = self._format_datetime(start_dt)
+                        if start_time is not None or end_time is not None:
+                            if (
+                                self._is_valid_datetime_value(start_time)
+                                and start_time is not None
+                            ):
+                                start_dt = self._parse_datetime_input(start_time)
+                                params["start"] = self._format_datetime(start_dt)
+                            else:
+                                start_dt = datetime.now(UTC) - timedelta(hours=1)
+                                params["start"] = self._format_datetime(start_dt)
+
+                            if (
+                                self._is_valid_datetime_value(end_time)
+                                and end_time is not None
+                            ):
+                                end_dt = self._parse_datetime_input(end_time)
+                                params["end"] = self._format_datetime(end_dt)
+                            else:
+                                end_dt = datetime.now(UTC)
+                                params["end"] = self._format_datetime(end_dt)
+
+                            params["step"] = step
+
+                        # Execute query using async client
+                        response = await async_client.get(endpoint_base, params=params)
+                        response.raise_for_status()
+
+                        result = response.json()
+
+                        if result.get("status") == "success":
+                            data = result.get("data", {})
+                            query_results = data.get("result", [])
+
+                            # Keep only top 10 results to avoid overwhelming response
+                            if len(query_results) > 10:
+                                query_results = query_results[:10]
+
+                            formatted_results = []
+                            for metric in query_results:
+                                metric_info = {
+                                    "metric": metric.get("metric", {}),
+                                    "values": [],
+                                }
+
+                                if data.get("resultType") == "vector":
+                                    value = metric.get("value")
+                                    if value:
+                                        metric_info["values"] = [
+                                            {"timestamp": value[0], "value": value[1]}
+                                        ]
+                                elif data.get("resultType") == "matrix":
+                                    values = metric.get("values", [])
+                                    metric_info["values"] = [
+                                        {"timestamp": ts, "value": val}
+                                        for ts, val in values
+                                    ]
+
+                                formatted_results.append(metric_info)
+
+                            results["essential_metrics"][metric_name] = {
+                                "query": query,
+                                "series_count": len(formatted_results),
+                                "metrics": formatted_results,
+                            }
                         else:
-                            start_dt = datetime.now(UTC) - timedelta(hours=1)
-                            params["start"] = self._format_datetime(start_dt)
-
-                        if (
-                            self._is_valid_datetime_value(end_time)
-                            and end_time is not None
-                        ):
-                            end_dt = self._parse_datetime_input(end_time)
-                            params["end"] = self._format_datetime(end_dt)
-                        else:
-                            end_dt = datetime.now(UTC)
-                            params["end"] = self._format_datetime(end_dt)
-
-                        params["step"] = step
-
-                    # Execute query
-                    response = self.client.get(endpoint_base, params=params)
-                    response.raise_for_status()
-
-                    result = response.json()
-
-                    if result.get("status") == "success":
-                        data = result.get("data", {})
-                        query_results = data.get("result", [])
-
-                        # Keep only top 10 results to avoid overwhelming response
-                        if len(query_results) > 10:
-                            query_results = query_results[:10]
-
-                        formatted_results = []
-                        for metric in query_results:
-                            metric_info = {
-                                "metric": metric.get("metric", {}),
-                                "values": [],
+                            results["essential_metrics"][metric_name] = {
+                                "query": query,
+                                "error": result.get("error", "Unknown error"),
                             }
 
-                            if data.get("resultType") == "vector":
-                                value = metric.get("value")
-                                if value:
-                                    metric_info["values"] = [
-                                        {"timestamp": value[0], "value": value[1]}
-                                    ]
-                            elif data.get("resultType") == "matrix":
-                                values = metric.get("values", [])
-                                metric_info["values"] = [
-                                    {"timestamp": ts, "value": val}
-                                    for ts, val in values
-                                ]
-
-                            formatted_results.append(metric_info)
-
+                    except Exception as e:
+                        logger.error(
+                            "Error querying essential metric",
+                            metric_name=metric_name,
+                            error=str(e),
+                        )
                         results["essential_metrics"][metric_name] = {
                             "query": query,
-                            "series_count": len(formatted_results),
-                            "metrics": formatted_results,
+                            "error": str(e),
                         }
-                    else:
-                        results["essential_metrics"][metric_name] = {
-                            "query": query,
-                            "error": result.get("error", "Unknown error"),
-                        }
-
-                except Exception as e:
-                    logger.error(
-                        "Error querying essential metric",
-                        metric_name=metric_name,
-                        error=str(e),
-                    )
-                    results["essential_metrics"][metric_name] = {
-                        "query": query,
-                        "error": str(e),
-                    }
 
             successful = len(
                 [v for v in results["essential_metrics"].values() if "error" not in v]
@@ -508,10 +641,12 @@ class PrometheusTools:
         try:
             # Get all metric names from Prometheus
             endpoint = f"{self.prometheus_url}/api/v1/label/__name__/values"
-            response = self.client.get(endpoint)
-            response.raise_for_status()
 
-            result = response.json()
+            async with httpx.AsyncClient(timeout=30.0) as async_client:
+                response = await async_client.get(endpoint)
+                response.raise_for_status()
+
+                result = response.json()
 
             if result.get("status") != "success":
                 return {
@@ -555,37 +690,44 @@ class PrometheusTools:
             if namespace:
                 filters.append(f'namespace="{namespace}"')
             if pod_name:
-                filters.append(f'pod=~".*{pod_name}.*"')
+                # Support exact matching for complete pod names
+                if "*" in pod_name or "?" in pod_name:
+                    # Already contains wildcards, use as-is with regex
+                    filters.append(f'pod=~"{pod_name}"')
+                else:
+                    # For exact pod name, try exact match first
+                    filters.append(f'pod="{pod_name}"')
 
             filter_str = ",".join(filters)
 
             # Test a sample of metrics to see which ones have data with filters
             test_metrics = all_metrics[: min(100, len(all_metrics))]  # Test first 100
 
-            for metric_name in test_metrics:
-                try:
-                    # Quick test query to see if this metric exists with filters
-                    test_query = f"{metric_name}{{{filter_str}}}"
-                    test_params = {"query": test_query}
+            async with httpx.AsyncClient(timeout=30.0) as async_client:
+                for metric_name in test_metrics:
+                    try:
+                        # Quick test query to see if this metric exists with filters
+                        test_query = f"{metric_name}{{{filter_str}}}"
+                        test_params = {"query": test_query}
 
-                    test_response = self.client.get(
-                        f"{self.prometheus_url}/api/v1/query", params=test_params
-                    )
-                    test_response.raise_for_status()
+                        test_response = await async_client.get(
+                            f"{self.prometheus_url}/api/v1/query", params=test_params
+                        )
+                        test_response.raise_for_status()
 
-                    test_result = test_response.json()
-                    if test_result.get("status") == "success" and test_result.get(
-                        "data", {}
-                    ).get("result"):
-                        filtered_metrics.append(metric_name)
+                        test_result = test_response.json()
+                        if test_result.get("status") == "success" and test_result.get(
+                            "data", {}
+                        ).get("result"):
+                            filtered_metrics.append(metric_name)
 
-                        # Stop if we've found enough metrics
-                        if len(filtered_metrics) >= limit:
-                            break
+                            # Stop if we've found enough metrics
+                            if len(filtered_metrics) >= limit:
+                                break
 
-                except Exception:
-                    # If individual metric test fails, skip it
-                    continue
+                    except Exception:
+                        # If individual metric test fails, skip it
+                        continue
 
             return {
                 "status": "success",
@@ -620,10 +762,13 @@ class PrometheusTools:
         try:
             logger.info("Querying Prometheus targets")
 
-            response = self.client.get(f"{self.prometheus_url}/api/v1/targets")
-            response.raise_for_status()
+            async with httpx.AsyncClient(timeout=30.0) as async_client:
+                response = await async_client.get(
+                    f"{self.prometheus_url}/api/v1/targets"
+                )
+                response.raise_for_status()
 
-            result = response.json()
+                result = response.json()
 
             if result.get("status") != "success":
                 return {
@@ -679,8 +824,3 @@ class PrometheusTools:
         except Exception as e:
             logger.error("Failed to get targets", error=str(e))
             return {"status": "error", "error": str(e)}
-
-    def __del__(self):
-        """Clean up HTTP client."""
-        if hasattr(self, "client"):
-            self.client.close()

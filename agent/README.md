@@ -24,6 +24,13 @@ python dev.py
 curl -X POST http://localhost:8000/decide \
   -H "Content-Type: application/json" \
   -d '{"event_type": "Warning", "namespace": "default", "resource_name": "test-pod", "resource_kind": "Pod", "event_data": {}}'
+
+
+# 5. Web-based Chat (New!)
+python web_chat.py
+# → http://localhost:8000/ (Browser-based chat interface)
+# → Real-time WebSocket communication with agents
+# → Beautiful web UI with agent status monitoring
 ```
 
 ## Architecture
@@ -35,13 +42,16 @@ K8s Event → SREWorkflow (GroupChat) → Decision/Actions
               ↓
     🔍 Analysis Agent (diagnoses with K8s tools)
               ↓
-    💡 Recommendation Agent (suggests actions)
+    � Metric Analysis Agent (Prometheus monitoring)
+              ↓
+    �💡 Recommendation Agent (suggests actions)
               ↓
     🛡️ Guard Agent (validates safety)
               ↓
     ✅ Approval Agent (makes final decision)
               ↓
     ⚡ Execution Agent (implements actions)
+    
 ```
 
 ### Key Components
@@ -50,6 +60,7 @@ K8s Event → SREWorkflow (GroupChat) → Decision/Actions
 - **GroupChatManager**: AutoGen's native orchestrator for agent conversations
 - **KubernetesTools**: Real K8s API integration with function calling
 - **Analysis Agent**: Pattern matching and symptom correlation with evidence
+- **Metric Analysis Agent**: Specialized Prometheus monitoring and analysis
 - **Multi-Agent Decision**: Collaborative reasoning through structured conversations
 - **Safety-First**: Dry-run mode, human approval, and action validation
 
@@ -135,6 +146,19 @@ curl -X POST http://localhost:8000/decide \
 
 **Response**: Multi-agent analysis with decision, confidence, and recommended actions.
 
+##  Real-time Agent Conversation
+
+Chat directly with specialized agents using AutoGen 0.7+ features:
+
+**Web-based Chat (New!):**
+```bash
+# Browser-based chat interface
+python web_chat.py
+# → http://localhost:8001/ (Beautiful web UI)
+# → Real-time WebSocket communication
+# → Agent status monitoring dashboard
+```
+
 ## Development
 
 ### Install & Run
@@ -147,6 +171,14 @@ python dev.py
 # ✅ API: http://localhost:8000
 # ✅ Docs: http://localhost:8000/docs (Swagger UI)
 # ✅ Docs: http://localhost:8000/redoc (ReDoc)
+
+
+# Web-based chat interface (New!)
+python web_chat.py
+# ✅ Beautiful browser-based chat UI
+# ✅ Real-time WebSocket communication
+# ✅ Agent status monitoring dashboard
+# ✅ http://localhost:8001/ access
 
 # Or direct API start (production mode)
 python -m src.api.main
@@ -215,12 +247,10 @@ class SREWorkflow:
 ```python
 from autogen_agentchat.agents import AssistantAgent
 from autogen_ext.models.openai import OpenAIChatCompletionClient
-
 class ModernAnalysisAgent(AssistantAgent):
     def __init__(self, name: str, **kwargs):
         model_client = OpenAIChatCompletionClient(model="gpt-4")
         super().__init__(name=name, model_client=model_client, **kwargs)
-
         # 새로운 도구 등록 방식 (0.7.4+)
 ```
 
