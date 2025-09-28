@@ -190,14 +190,12 @@ pre-commit install && pre-commit run --all-files
 AutoGen에서는 **"Orchestrator"라는 공식 용어가 없습니다**. 대신 다음 구조를 사용:
 
 ```python
-# 1. v0.2 스타일 (안정적, 검증됨)
-from autogen import GroupChat, GroupChatManager, AssistantAgent
 
-# 2. v0.7.4+ 스타일 (최신 기능)
+# 21. v0.7.4+ 스타일 (최신 기능)
 from autogen_agentchat.agents import AssistantAgent as NewAssistantAgent
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
-# 3. 하이브리드 Workflow (추천)
+# 2. 하이브리드 Workflow (추천)
 class SREWorkflow:
     def __init__(self):
         self.agents = self._create_agents()      # v0.2 호환
@@ -209,22 +207,11 @@ class SREWorkflow:
             groupchat=self.group_chat,
             llm_config={"model": "gpt-4", "temperature": 0.0}
         )
-```#### 에이전트 작성 패턴 (하이브리드 방식)
-
-**v0.2 호환 방식** (현재 사용, 안정적):
-```python
-from autogen import ConversableAgent
-
-class AnalysisAgent(ConversableAgent):
-    def __init__(self, name: str, **kwargs):
-        super().__init__(name=name, system_message="...", **kwargs)
-
-        # v0.2 도구 등록 패턴
-        self.register_for_llm(name="get_pod_status")(self.k8s_tools.get_pod_status)
-        self.register_for_execution(name="get_pod_status")(self.k8s_tools.get_pod_status)
 ```
 
-**v0.7.4+ 최신 방식** (향후 전환):
+#### 에이전트 작성 패턴
+
+**v0.7.4+ 최신 방식** :
 ```python
 from autogen_agentchat.agents import AssistantAgent
 from autogen_ext.models.openai import OpenAIChatCompletionClient
@@ -312,25 +299,3 @@ print(f"Messages: {self.group_chat.messages}")
 ```
 
 ### Project Structure
-```
-src/
-├── workflows/
-│   └── sre_workflow.py     # AutoGen GroupChat workflow
-├── agents/
-│   └── analysis.py         # K8s issue analysis agent
-├── tools/
-│   └── kubernetes.py       # K8s API integration
-├── api/
-│   └── main.py            # FastAPI endpoints
-├── guards/                 # Safety mechanisms (empty)
-├── config.py              # Pydantic settings
-└── __init__.py
-
-configs/
-├── agents.yaml.example    # Agent configuration template
-└── README.md              # Configuration guide
-
-dev.py                     # Development server
-pyproject.toml            # Project dependencies & config
-.env.example              # Environment template
-```

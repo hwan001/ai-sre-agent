@@ -7,11 +7,11 @@ Diagnoses Kubernetes issues using LLM reasoning and observability data.
 from __future__ import annotations
 
 from typing import Any
-import structlog
 
+import structlog
 from autogen_agentchat.agents import AssistantAgent
 
-from ..tools.kubernetes import KubernetesTools
+from tools.kubernetes import KubernetesTools
 
 logger = structlog.get_logger()
 
@@ -28,7 +28,11 @@ class AnalysisAgent(AssistantAgent):
     """
 
     def __init__(
-        self, name: str = "analysis_agent", description: str | None = None, model_client=None, **kwargs
+        self,
+        name: str = "analysis_agent",
+        description: str | None = None,
+        model_client=None,
+        **kwargs,
     ):
         if description is None:
             description = self._get_default_description()
@@ -42,7 +46,7 @@ class AnalysisAgent(AssistantAgent):
             description=description,
             model_client=model_client,
             # tools=[self._get_kubernetes_tools()],  # Tools will be added later
-            **kwargs
+            **kwargs,
         )
 
     def _get_default_description(self) -> str:
