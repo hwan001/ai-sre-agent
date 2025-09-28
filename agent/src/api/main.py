@@ -6,11 +6,16 @@ Provides REST API for the Kubernetes Operator to interact with the agent.
 
 from __future__ import annotations
 
+import json
+import os
 import uuid
+from pathlib import Path
 from typing import Any
 
 import structlog
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # Use absolute imports - pyproject.toml includes src in pythonpath
@@ -22,6 +27,9 @@ from plugins.prometheus_plugin import (
     prometheus_query_specific_metrics,
 )
 from workflows.sre_workflow import SREWorkflow
+
+# Web Chat imports
+from api.chat_manager import WebChatManager
 
 logger = structlog.get_logger()
 settings = get_settings()
@@ -42,8 +50,15 @@ app = FastAPI(
             "name": "prometheus-plugins",
             "description": "Prometheus agent plugins for testing and monitoring",
         },
+        {
+            "name": "web-chat",
+            "description": "Web-based chat interface with MetricAnalyzeAgent",
+        },
     ],
 )
+
+# Static files mounting
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 # Request/Response Models
@@ -126,10 +141,118 @@ class PrometheusTargetsRequest(BaseModel):
     prometheus_url: str | None = None
 
 
+# 글로벌 채팅 매니저
+chat_manager = WebChatManager()
+
+
 @app.get("/health", tags=["core"])
 async def health_check() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "healthy", "version": "0.1.0"}
+
+
+# Web Chat Endpoints
+@app.get("/", response_class=HTMLResponse, tags=["web-chat"])
+async def get_chat_page():
+    """채팅 페이지 HTML"""
+    try:
+        with open("static/index.html", "r", encoding="utf-8") as f:
+            html_content = f.read()
+        return HTMLResponse(content=html_content)
+    except FileNotFoundError:
+        return HTMLResponse(
+            content="<h1>Error: HTML file not found</h1><p>Please ensure static/index.html exists.</p>",
+            status_code=500,
+        )
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket 엔드포인트"""
+    await websocket.accept()
+    logger.info("WebSocket connection established")
+
+    try:
+        # 연결 성공 메시지 전송
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "connection_status",
+                    "status": "connected",
+                    "message": "에이전트 초기화 중...",
+                }
+            )
+        )
+
+        # 에이전트 초기화
+        try:
+            await chat_manager.initialize_agent()
+            await websocket.send_text(
+                json.dumps(
+                    {
+                        "type": "connection_status",
+                        "status": "ready",
+                        "message": "Multi-Agent SRE 시스템 준비 완료",
+                        "agent_status": chat_manager._get_agent_status({}),
+                    }
+                )
+            )
+        except Exception as init_error:
+            logger.error(f"Agent initialization failed: {init_error}")
+            await websocket.send_text(
+                json.dumps(
+                    {
+                        "type": "error",
+                        "error": f"에이전트 초기화 실패: {init_error}",
+                    }
+                )
+            )
+            return
+
+        while True:
+            # 메시지 수신
+            data = await websocket.receive_text()
+            message_data = json.loads(data)
+
+            if message_data.get("type") == "chat":
+                user_message = message_data.get("message", "")
+                chat_mode = message_data.get("mode", "team")  # 기본값은 팀채팅
+                agent_type = message_data.get(
+                    "agent_type", "metric_analyze_agent"
+                )  # 개별 모드용 에이전트 타입
+                logger.info(
+                    f"Received user message: {user_message}, mode: {chat_mode}, agent_type: {agent_type}"
+                )
+
+                # 진행 상태 전송
+                mode_display = (
+                    "🚀 Multi-Agent 팀 시스템"
+                    if chat_mode == "team"
+                    else "🤖 개별 에이전트"
+                )
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "type": "processing",
+                            "message": f"{mode_display} 시작...",
+                            "mode": chat_mode,
+                        }
+                    )
+                )
+
+                # 선택된 모드에 따라 에이전트와 대화
+                await chat_manager.chat_with_agent_streaming(
+                    user_message, websocket, chat_mode, agent_type
+                )
+
+    except WebSocketDisconnect:
+        logger.info("WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        try:
+            await websocket.send_text(json.dumps({"type": "error", "error": str(e)}))
+        except:
+            pass  # 연결이 이미 끊어진 경우
 
 
 @app.post("/decide", response_model=DecisionResponse, tags=["core"])

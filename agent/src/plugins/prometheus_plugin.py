@@ -25,7 +25,8 @@ def get_prometheus_tools(prometheus_url: str | None = None) -> PrometheusTools:
 # AutoGen agent tool functions
 async def prometheus_query_specific_metrics(
     metric_names: Annotated[
-        list[str], "List of metric names to query (e.g., ['up', 'node_load1'])"
+        list[str],
+        "List of metric names to query (e.g., ['up', 'node_load1']) or ['auto'] for Pod discovery",
     ],
     start_time: Annotated[
         str | datetime | int | float | None, "Start time for metrics query"
@@ -37,22 +38,27 @@ async def prometheus_query_specific_metrics(
     pod_name: Annotated[str | None, "Pod name filter (supports wildcards)"] = None,
     limit_per_metric: Annotated[int, "Maximum time series per metric"] = 50,
     step: Annotated[str, "Query resolution step (e.g., '1m', '5m')"] = "1m",
+    auto_discover: Annotated[
+        bool, "Automatically discover Pod-related metrics when Pod name is provided"
+    ] = True,
     prometheus_url: Annotated[str | None, "Prometheus server URL"] = None,
 ) -> dict[str, Any]:
     """
-    Query specific Prometheus metrics efficiently.
+    Query specific Prometheus metrics efficiently with optional auto-discovery.
 
     This function executes separate queries for each metric, avoiding inefficient
-    OR queries and providing better control over data volume.
+    OR queries and providing better control over data volume. Supports automatic
+    Pod metric discovery when pod_name is provided.
 
     Args:
-        metric_names: List of metric names to query (e.g., ['up', 'node_load1'])
+        metric_names: List of metric names to query or ['auto'] for Pod discovery
         start_time: Start time. Optional.
         end_time: End time. Optional.
         namespace: Kubernetes namespace filter. Optional.
         pod_name: Pod name filter. Optional.
         limit_per_metric: Max time series per metric (default: 50)
         step: Query resolution step (default: '1m')
+        auto_discover: Enable automatic Pod metric discovery (default: True)
         prometheus_url: Prometheus server URL. Optional.
 
     Returns:
@@ -67,6 +73,7 @@ async def prometheus_query_specific_metrics(
         pod_name,
         limit_per_metric,
         step,
+        auto_discover,
     )
 
 
@@ -191,13 +198,21 @@ RECOMMENDED: Use efficient enhanced tools for better performance
        limit_per_metric=50
    )
 
-2. Get essential system metrics with calculated values:
+2. Auto-discover Pod metrics (NEW FEATURE):
+   prometheus_query_specific_metrics(
+       metric_names=['auto'],
+       namespace="monitoring",
+       pod_name="prometheus-stack-prometheus-node-exporter-q47ww",
+       limit_per_metric=20
+   )
+
+3. Get essential system metrics with calculated values:
    prometheus_get_essential_metrics(
        namespace="production", 
        pod_name="database"
    )
 
-3. Discover available metrics:
+4. Discover available metrics:
    prometheus_get_metric_names(
        namespace="production",
        pod_name="web-server",
@@ -231,6 +246,8 @@ Benefits of Enhanced Tools:
 - Better error handling per metric
 - Reduced Prometheus server load
 - Kubernetes-aware filtering by namespace and pod name
+- Automatic Pod metric discovery with ['auto'] parameter
+- Enhanced Pod filtering with exact matching and wildcards
 - Metric discovery functionality for observability gap analysis
 """
 
