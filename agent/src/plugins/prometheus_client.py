@@ -127,6 +127,11 @@ class PrometheusTools:
         than using OR operators in PromQL. Supports automatic Pod metric discovery.
         """
         try:
+            # Track if auto-discovery will be performed
+            auto_discovery_performed = (
+                metric_names == ["auto"] and auto_discover and pod_name
+            )
+
             # Handle auto-discovery for Pod metrics
             if metric_names == ["auto"] and pod_name and auto_discover:
                 # Auto-discover Pod-related metrics
@@ -238,9 +243,7 @@ class PrometheusTools:
                     "pod_name_filter": pod_name,
                     "metrics_requested": len(metric_names),
                     "limit_per_metric": limit_per_metric,
-                    "auto_discovery_used": metric_names != ["auto"]
-                    and auto_discover
-                    and pod_name,
+                    "auto_discovery_used": auto_discovery_performed,
                 },
                 "metrics_by_name": {},
             }

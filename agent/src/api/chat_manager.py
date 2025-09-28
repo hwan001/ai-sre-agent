@@ -28,6 +28,19 @@ logger = structlog.get_logger()
 class WebChatManager:
     """웹 채팅 매니저 - Multi-Agent SRE Workflow와 개별 Agent 모드 지원"""
 
+    # Agent conversation limits
+    MAX_INDIVIDUAL_MESSAGES = 10
+    MAX_INDIVIDUAL_TURNS = 5
+
+    # Streaming and UI constants
+    STEP_DELAY_SECONDS = 1.5
+    TEAM_PROGRESS_DELAY_SECONDS = 0.5
+    MIN_MEANINGFUL_MESSAGE_LENGTH = 10
+
+    # Model configuration
+    DEFAULT_TEMPERATURE = 0.1
+    DEFAULT_SEED = 42
+
     def __init__(self):
         self.settings = get_settings()
         self.sre_workflow = None
@@ -72,8 +85,8 @@ class WebChatManager:
                 azure_endpoint=azure_endpoint,
                 api_key=azure_api_key,
                 api_version=azure_api_version,
-                seed=42,
-                temperature=0.1,
+                seed=self.DEFAULT_SEED,
+                temperature=self.DEFAULT_TEMPERATURE,
             )
 
             self.individual_agents["metric_analyze_agent"] = {
@@ -183,7 +196,7 @@ class WebChatManager:
                     )
 
                     # 메시지 간 약간의 딜레이
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(self.TEAM_PROGRESS_DELAY_SECONDS)
             else:
                 # 단일 응답 전송
                 await websocket.send_text(
@@ -263,8 +276,10 @@ class WebChatManager:
                 # 단일 에이전트로 구성된 팀 생성
                 single_agent_team = RoundRobinGroupChat(
                     participants=[agent],
-                    termination_condition=MaxMessageTermination(max_messages=10),
-                    max_turns=5,
+                    termination_condition=MaxMessageTermination(
+                        max_messages=self.MAX_INDIVIDUAL_MESSAGES
+                    ),
+                    max_turns=self.MAX_INDIVIDUAL_TURNS,
                 )
 
                 # 실시간 스트리밍을 위한 비동기 실행
@@ -302,7 +317,7 @@ class WebChatManager:
                             )
                         )
                         # 각 단계별 딜레이
-                        await asyncio.sleep(1.5)
+                        await asyncio.sleep(self.STEP_DELAY_SECONDS)
                     else:
                         break
 
@@ -321,7 +336,8 @@ class WebChatManager:
                         if (
                             content_attr
                             and isinstance(content_attr, str)
-                            and len(content_attr.strip()) > 10
+                            and len(content_attr.strip())
+                            > self.MIN_MEANINGFUL_MESSAGE_LENGTH
                         ):
                             meaningful_messages.append(content_attr)
 
