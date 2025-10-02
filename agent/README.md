@@ -1,6 +1,6 @@
 # SRE Agent
 
-> AutoGen-powered multi-agent system for intelligent Kubernetes SRE operations.
+> AutoGen 0.7-powered multi-agent system for intelligent Kubernetes SRE operations.
 
 ## Quick Start
 
@@ -16,22 +16,87 @@ cp .env.example .env
 
 # 3. Start Development Server
 python dev.py
-# → http://localhost:8000 (API) + AutoGen multi-agent workflow ready
+# → http://localhost:8000 (API) + Enhanced Multi-Agent Workflow ready
 # → http://localhost:8000/docs (Interactive API Documentation)
 # → http://localhost:8000/redoc (Alternative API Docs)
 
-# 4. Test the Multi-Agent System
-curl -X POST http://localhost:8000/decide \
+# 4. Test the Enhanced Multi-Agent System
+curl -X POST http://localhost:8000/decision \
   -H "Content-Type: application/json" \
-  -d '{"event_type": "Warning", "namespace": "default", "resource_name": "test-pod", "resource_kind": "Pod", "event_data": {}}'
+  -d '{
+    "event_type": "Warning",
+    "namespace": "default",
+    "resource_name": "test-pod",
+    "resource_kind": "Pod",
+    "event_data": {"message": "Pod CrashLoopBackOff"}
+  }'
 
-
-# 5. Web-based Chat (New!)
-python web_chat.py
-# → http://localhost:8000/ (Browser-based chat interface)
-# → Real-time WebSocket communication with agents
-# → Beautiful web UI with agent status monitoring
+# 5. Get Workflow Information
+curl http://localhost:8000/workflow/info
 ```
+
+## Architecture (v2.0 - Enhanced Multi-Agent)
+
+**AutoGen 0.7 Enhanced Workflow**: Orchestrator-led multi-team collaboration for intelligent SRE operations.
+
+```
+K8s Event → Orchestrator Leader → Specialized Teams → Decision/Actions
+              ↓
+    🎯 Triage Agent (classifies incidents)
+              ↓
+    📋 Log Analysis Coordinator → Log Analysis Team (Swarm)
+       ├─ Loki Query Agent (fetches logs)
+       ├─ Log Summarizer Agent (summarizes patterns)
+       └─ Log Pattern Agent (identifies anomalies)
+              ↓
+    ↓
+    📊 Metric Analysis Coordinator → Metric Analysis Team (Swarm)
+       ├─ Prometheus Query Agent (fetches metrics)
+       ├─ Metric Analyzer Agent (analyzes trends)
+       └─ Anomaly Detector Agent (detects anomalies)
+              ↓
+    ⚡ Action Coordinator → Action Team (Swarm)
+       ├─ Recommendation Agent (suggests actions)
+       ├─ Guard Agent (validates safety)
+       └─ Approval Agent (final approval)
+```
+
+### Key Components (v2.0)
+
+- **EnhancedSREWorkflow**: Orchestrator-led multi-team workflow engine
+- **ContextManager**: Shared state management across all agents and teams
+- **ToolRegistry**: Central tool discovery and management system
+- **Specialized Teams**: Swarm-based teams with HandOff patterns
+  - Log Analysis Team (3 agents with bidirectional HandOffs)
+  - Metric Analysis Team (3 agents with sequential HandOffs)
+  - Action Team (3 agents with validation pipeline)
+- **Advanced Termination**: 5 intelligent stopping conditions
+  - MaxMessageTermination (conversation length)
+  - HighConfidenceTermination (confidence threshold)
+  - AllTeamsReportedTermination (team completion)
+  - CriticalErrorTermination (error handling)
+  - TimeoutTermination (time limits)
+- **Safety-First**: Multi-layer validation with guard agents
+- **Real Monitoring**: Prometheus + Loki integration
+
+### Architecture Highlights
+
+**v2.0 Features:**
+- 🎯 **Leader-based Orchestration**: MagenticOne-style coordination
+- 🤝 **Swarm Teams**: HandOff-based collaboration within teams
+- 📊 **Context Sharing**: WorkflowContext accessible to all agents
+- 🔧 **Tool Registry**: Centralized tool management and discovery
+- ⏱️ **Smart Termination**: Multiple conditions for optimal stopping
+- 🔄 **Async-First**: Full async/await support throughout
+
+## Configuration
+
+### Environment Variables
+
+**Required:**
+- `AZURE_OPENAI_ENDPOINT` + `AZURE_OPENAI_API_KEY` (Azure OpenAI)
+- OR `OPENAI_API_KEY` (OpenAI)
+- `KUBECONFIG` (Kubernetes config path)
 
 ## Architecture
 
@@ -74,14 +139,35 @@ K8s Event → SREWorkflow (GroupChat) → Decision/Actions
 - `KUBECONFIG` (Kubernetes config path)
 
 **Optional:**
-- `PROMETHEUS_URL` - Metrics integration
-- `AZURE_KEY_VAULT_URL` - Secure secret management
+- `PROMETHEUS_URL` - Prometheus metrics endpoint
+- `LOKI_URL` - Grafana Loki logs endpoint
 - `ENABLE_DRY_RUN=true` - Safety mode (default)
 - `REQUIRE_HUMAN_APPROVAL=true` - Human-in-the-loop (default)
 
-### AutoGen Configuration
+### Workflow Configuration
 
-The workflow is configured through environment variables and code:
+The enhanced workflow is configured through environment variables and `EnhancedSREWorkflow`:
+
+```python
+from workflows.sre_workflow import EnhancedSREWorkflow
+
+# Initialize workflow
+workflow = EnhancedSREWorkflow()
+
+# Process incident
+result = await workflow.process_incident(
+    event_data={"message": "Pod CrashLoopBackOff"},
+    namespace="production",
+    resource_name="api-server",
+)
+
+# Get workflow info
+info = workflow.get_workflow_info()
+print(f"Architecture: {info['architecture']}")
+print(f"Teams: {list(info['teams'].keys())}")
+```
+
+See [ENHANCED_WORKFLOW_GUIDE.md](ENHANCED_WORKFLOW_GUIDE.md) for detailed configuration options.
 
 **LLM Settings**: Configured in `src/config.py` with model selection per agent
 **Agent Behavior**: Defined in `src/workflows/sre_workflow.py` using GroupChatManager

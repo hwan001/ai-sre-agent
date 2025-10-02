@@ -104,7 +104,7 @@ class MonitoringSettings(BaseSettings):
 
     # Loki settings
     loki_url: str = "http://loki:3100"
-    loki_mock: bool = True
+    loki_timeout: int = 30
 
 
 class AzureSettings(BaseSettings):

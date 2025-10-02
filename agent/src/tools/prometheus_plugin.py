@@ -8,7 +8,11 @@ with AutoGen Assistant Agents.
 from datetime import datetime
 from typing import Annotated, Any
 
+import structlog
+
 from .prometheus_client import PrometheusTools
+
+logger = structlog.get_logger()
 
 # Global instance for reuse across agent calls
 _prometheus_tools_instance: PrometheusTools | None = None
@@ -64,8 +68,17 @@ async def prometheus_query_specific_metrics(
     Returns:
         Dictionary with metrics organized by name, avoiding data overload.
     """
+    logger.debug(
+        "[TOOL CALL] prometheus_query_specific_metrics invoked",
+        metric_names=metric_names,
+        namespace=namespace,
+        pod_name=pod_name,
+        limit_per_metric=limit_per_metric,
+        step=step,
+        auto_discover=auto_discover,
+    )
     tools = get_prometheus_tools(prometheus_url)
-    return await tools.query_multiple_metrics(
+    result = await tools.query_multiple_metrics(
         metric_names,
         start_time,
         end_time,
@@ -75,6 +88,12 @@ async def prometheus_query_specific_metrics(
         step,
         auto_discover,
     )
+    logger.debug(
+        "[TOOL CALL] prometheus_query_specific_metrics completed",
+        status=result.get("status"),
+        metrics_count=len(result.get("metrics", {})),
+    )
+    return result
 
 
 async def prometheus_get_essential_metrics(

@@ -126,6 +126,17 @@ class PrometheusTools:
         This executes separate queries for each metric, which is more efficient
         than using OR operators in PromQL. Supports automatic Pod metric discovery.
         """
+        logger.debug(
+            "[TOOL CALL] query_multiple_metrics started",
+            metric_names=metric_names,
+            namespace=namespace,
+            pod_name=pod_name,
+            limit_per_metric=limit_per_metric,
+            step=step,
+            auto_discover=auto_discover,
+            has_start_time=bool(start_time),
+            has_end_time=bool(end_time),
+        )
         try:
             # Track if auto-discovery will be performed
             auto_discovery_performed = (
@@ -189,10 +200,16 @@ class PrometheusTools:
 
                             # Multiple Pod matching strategies
                             pod_filters = []
-                            if "*" in pod_name or "?" in pod_name:
-                                pod_filters.append(f'pod=~"{pod_name}"')
-                            else:
-                                pod_filters.append(f'pod="{pod_name}"')
+                            # Skip if pod_name is just a wildcard (means "all pods")
+                            if pod_name and pod_name not in ("*", ".*", ".*"):
+                                if "*" in pod_name or "?" in pod_name:
+                                    # Convert shell wildcards to regex: * -> .* and ? -> .
+                                    regex_pattern = pod_name.replace("*", ".*").replace(
+                                        "?", "."
+                                    )
+                                    pod_filters.append(f'pod=~"{regex_pattern}"')
+                                else:
+                                    pod_filters.append(f'pod="{pod_name}"')
 
                                 # For node-exporter pods, also try instance matching
                                 if "node-exporter" in pod_name:
@@ -262,11 +279,14 @@ class PrometheusTools:
                         filters = []
                         if namespace:
                             filters.append(f'namespace="{namespace}"')
-                        if pod_name:
+                        if pod_name and pod_name not in ("*", ".*", ".*"):
                             # Enhanced Pod matching (exact and flexible)
                             if "*" in pod_name or "?" in pod_name:
-                                # Already contains wildcards, use as-is with regex
-                                filters.append(f'pod=~"{pod_name}"')
+                                # Convert shell wildcards to regex
+                                regex_pattern = pod_name.replace("*", ".*").replace(
+                                    "?", "."
+                                )
+                                filters.append(f'pod=~"{regex_pattern}"')
                             else:
                                 # For exact pod name, try exact match first
                                 filters.append(f'pod="{pod_name}"')
@@ -437,11 +457,12 @@ class PrometheusTools:
             filters = []
             if namespace:
                 filters.append(f'namespace="{namespace}"')
-            if pod_name:
+            if pod_name and pod_name not in ("*", ".*", ".*"):
                 # Support exact matching for complete pod names
                 if "*" in pod_name or "?" in pod_name:
-                    # Already contains wildcards, use as-is with regex
-                    filters.append(f'pod=~"{pod_name}"')
+                    # Convert shell wildcards to regex
+                    regex_pattern = pod_name.replace("*", ".*").replace("?", ".")
+                    filters.append(f'pod=~"{regex_pattern}"')
                 else:
                     # For exact pod name, try exact match first
                     filters.append(f'pod="{pod_name}"')
@@ -689,11 +710,12 @@ class PrometheusTools:
             filters = []
             if namespace:
                 filters.append(f'namespace="{namespace}"')
-            if pod_name:
+            if pod_name and pod_name not in ("*", ".*", ".*"):
                 # Support exact matching for complete pod names
                 if "*" in pod_name or "?" in pod_name:
-                    # Already contains wildcards, use as-is with regex
-                    filters.append(f'pod=~"{pod_name}"')
+                    # Convert shell wildcards to regex
+                    regex_pattern = pod_name.replace("*", ".*").replace("?", ".")
+                    filters.append(f'pod=~"{regex_pattern}"')
                 else:
                     # For exact pod name, try exact match first
                     filters.append(f'pod="{pod_name}"')

@@ -94,7 +94,6 @@ class LokiClient:
         self,
         base_url: str | None = None,
         timeout: int | None = None,
-        mock: bool = False,
     ):
         """
         Initialize Loki client with configuration from settings.
@@ -102,50 +101,14 @@ class LokiClient:
         Args:
             base_url: Loki server base URL (overrides config)
             timeout: Request timeout in seconds (overrides config)
-            username: Basic auth username (overrides config)
-            password: Basic auth password (overrides config)
         """
         settings = get_settings()
 
         self.base_url = (base_url or settings.monitoring.loki_url).rstrip("/")
-        self.timeout = timeout or settings.monitoring.loki_timeout or 30
-        self.mock = mock
+        self.timeout = timeout or settings.monitoring.loki_timeout
 
         # Setup HTTP client
-
-        if not self.mock:
-            self.client = httpx.AsyncClient(timeout=httpx.Timeout(self.timeout))
-        else:
-            self.client = None
-            logger.info("Loki client initialized in mock mode")
-
-    def _generate_mock_query_result(
-        self, query: str, time_window_minutes: int = 30
-    ) -> LokiQueryResult:
-        """Generate mock query result for testing."""
-        # Create mock log entries
-        mock_entries = [
-            LogEntry(
-                timestamp=datetime.now() - timedelta(minutes=i),
-                line=f"[ERROR] Mock log entry {i}: {query} - Database connection failed",
-                labels={
-                    "namespace": "production",
-                    "pod": "app-pod",
-                    "container": "main",
-                },
-            )
-            for i in range(1, 6)
-        ]
-
-        mock_stream = LogStream(
-            stream={"namespace": "production", "pod": "app-pod"}, values=mock_entries
-        )
-
-        return LokiQueryResult(
-            result_type="streams",
-            streams=[mock_stream],
-            stats={"summary": {"bytesTotal": 1024, "linesTotal": len(mock_entries)}},
-        )
+        self.client = httpx.AsyncClient(timeout=httpx.Timeout(self.timeout))
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -276,22 +239,20 @@ class LokiTools:
     for log analysis during incident investigation.
     """
 
-    def __init__(self, loki_client: LokiClient | None = None, mock: bool = False):
+    def __init__(self, loki_client: LokiClient | None = None):
         """
         Initialize Loki tools.
 
         Args:
             loki_client: Optional Loki client instance
-            mock: Use mock mode for testing
         """
         self._loki_client = loki_client
         self._client_owned = loki_client is None
-        self._mock = mock
 
     async def _get_client(self) -> LokiClient:
         """Get or create Loki client."""
         if self._loki_client is None:
-            self._loki_client = LokiClient(mock=self._mock)
+            self._loki_client = LokiClient()
         return self._loki_client
 
     async def analyze_pod_errors(
@@ -308,47 +269,23 @@ class LokiTools:
         Returns:
             Analysis result with error patterns
         """
-        if self._mock:
-            return {
-                "tool": "analyze_pod_errors",
-                "pod": pod_name,
-                "namespace": namespace,
-                "time_window_minutes": time_window_minutes,
-                "total_entries": 15,
-                "error_patterns": {"errors": 8, "exceptions": 4, "failures": 3},
-                "recent_errors": [
-                    {
-                        "timestamp": (
-                            datetime.now() - timedelta(minutes=5)
-                        ).isoformat(),
-                        "message": "java.lang.OutOfMemoryError: Java heap space",
-                    },
-                    {
-                        "timestamp": (
-                            datetime.now() - timedelta(minutes=10)
-                        ).isoformat(),
-                        "message": "ERROR: Database connection failed",
-                    },
-                    {
-                        "timestamp": (
-                            datetime.now() - timedelta(minutes=15)
-                        ).isoformat(),
-                        "message": "WARN: High CPU usage detected (85%)",
-                    },
-                ],
-                "summary": f"Found 15 error-related log entries in the last {time_window_minutes} minutes",
-                "recommendation": "Pod appears to be experiencing memory pressure and database connectivity issues",
-                "mock_data": True,
-            }
-
+        logger.debug(
+            "[TOOL CALL] analyze_pod_errors started",
+            namespace=namespace,
+            pod_name=pod_name,
+            time_window_minutes=time_window_minutes,
+        )
         client = await self._get_client()
 
         query = f'{{namespace="{namespace}", pod="{pod_name}"}} |~ "(?i)(error|exception|failed|panic)"'
+        logger.debug("Loki query generated", query=query)
 
         logql_query = LogQLQuery(
             query=query,
             start=datetime.now() - timedelta(minutes=time_window_minutes),
+            end=datetime.now(),
             limit=500,
+            direction="backward",
         )
 
         try:
@@ -422,69 +359,6 @@ class LokiTools:
         Returns:
             Application logs with metadata
         """
-        if self._mock:
-            return {
-                "tool": "get_application_logs",
-                "app_label": app_label,
-                "namespace": namespace,
-                "log_level": log_level,
-                "time_window_minutes": time_window_minutes,
-                "total_entries": 45,
-                "logs": [
-                    {
-                        "timestamp": (
-                            datetime.now() - timedelta(minutes=5)
-                        ).isoformat(),
-                        "message": "[INFO] Application startup completed in 2.3 seconds",
-                        "labels": {
-                            "app": app_label,
-                            "namespace": namespace or "default",
-                        },
-                    },
-                    {
-                        "timestamp": (
-                            datetime.now() - timedelta(minutes=10)
-                        ).isoformat(),
-                        "message": "[ERROR] Failed to connect to database: connection timeout",
-                        "labels": {
-                            "app": app_label,
-                            "namespace": namespace or "default",
-                        },
-                    },
-                    {
-                        "timestamp": (
-                            datetime.now() - timedelta(minutes=15)
-                        ).isoformat(),
-                        "message": "[WARN] Memory usage above 80% threshold",
-                        "labels": {
-                            "app": app_label,
-                            "namespace": namespace or "default",
-                        },
-                    },
-                    {
-                        "timestamp": (
-                            datetime.now() - timedelta(minutes=20)
-                        ).isoformat(),
-                        "message": "[INFO] Processing request for user ID: 12345",
-                        "labels": {
-                            "app": app_label,
-                            "namespace": namespace or "default",
-                        },
-                    },
-                    {
-                        "timestamp": (
-                            datetime.now() - timedelta(minutes=25)
-                        ).isoformat(),
-                        "message": "[DEBUG] Cache hit for key: user_session_abc123",
-                        "labels": {
-                            "app": app_label,
-                            "namespace": namespace or "default",
-                        },
-                    },
-                ],
-                "summary": f"Retrieved 45 log entries for app '{app_label}' showing normal operations with some database connectivity issues",
-                "mock_data": True,
-            }
         client = await self._get_client()
 
         # Build LogQL query
@@ -501,7 +375,9 @@ class LokiTools:
         logql_query = LogQLQuery(
             query=query,
             start=datetime.now() - timedelta(minutes=time_window_minutes),
+            end=datetime.now(),
             limit=limit,
+            direction="backward",
         )
 
         try:
@@ -559,69 +435,6 @@ class LokiTools:
         Returns:
             Matching log entries
         """
-        if self._mock:
-            return {
-                "tool": "search_logs_by_pattern",
-                "pattern": pattern,
-                "namespace": namespace,
-                "time_window_minutes": time_window_minutes,
-                "total_matches": 12,
-                "matches": [
-                    {
-                        "timestamp": (
-                            datetime.now() - timedelta(minutes=2)
-                        ).isoformat(),
-                        "message": f"[ERROR] {pattern} detected in payment processing module",
-                        "labels": {
-                            "namespace": namespace or "default",
-                            "service": "payment",
-                        },
-                    },
-                    {
-                        "timestamp": (
-                            datetime.now() - timedelta(minutes=5)
-                        ).isoformat(),
-                        "message": f"[WARN] Potential {pattern} in user authentication service",
-                        "labels": {
-                            "namespace": namespace or "default",
-                            "service": "auth",
-                        },
-                    },
-                    {
-                        "timestamp": (
-                            datetime.now() - timedelta(minutes=8)
-                        ).isoformat(),
-                        "message": f"[ERROR] Critical {pattern} in database connection pool",
-                        "labels": {
-                            "namespace": namespace or "default",
-                            "service": "database",
-                        },
-                    },
-                    {
-                        "timestamp": (
-                            datetime.now() - timedelta(minutes=12)
-                        ).isoformat(),
-                        "message": f"[INFO] {pattern} resolved through automatic retry mechanism",
-                        "labels": {
-                            "namespace": namespace or "default",
-                            "service": "retry",
-                        },
-                    },
-                    {
-                        "timestamp": (
-                            datetime.now() - timedelta(minutes=15)
-                        ).isoformat(),
-                        "message": f"[DEBUG] Monitoring {pattern} patterns in system metrics",
-                        "labels": {
-                            "namespace": namespace or "default",
-                            "service": "monitoring",
-                        },
-                    },
-                ],
-                "summary": f"Found 12 log entries matching pattern '{pattern}' with 3 critical errors requiring attention",
-                "analysis": "Pattern indicates potential systemic issue affecting multiple components",
-                "mock_data": True,
-            }
         client = await self._get_client()
 
         # Build LogQL query
@@ -633,7 +446,9 @@ class LokiTools:
         logql_query = LogQLQuery(
             query=query,
             start=datetime.now() - timedelta(minutes=time_window_minutes),
+            end=datetime.now(),
             limit=limit,
+            direction="backward",
         )
 
         try:
@@ -679,18 +494,15 @@ class LokiTools:
 _loki_tools: LokiTools | None = None
 
 
-def get_loki_tools(mock: bool = False) -> list[Callable]:
+def get_loki_tools() -> list[Callable]:
     """
     Get Loki tools as a list of callable functions for AutoGen agents.
-
-    Args:
-        mock: Use mock mode for testing
 
     Returns:
         List of Loki tool functions that can be used by AutoGen agents
     """
     # Create a LokiTools instance
-    loki_tools_instance = LokiTools(mock=mock)
+    loki_tools_instance = LokiTools()
 
     # Return list of methods as callable tools
     return [

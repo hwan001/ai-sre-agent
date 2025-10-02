@@ -1,124 +1,140 @@
 <!DOCTYPE html>
-<html>
+<html lang="ko">
 <head>
-    <title>SRE AI Agent - Observability Platform</title>
-    <meta charset="utf-8">
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SRE AI Agent v3.0 - Conversational Multi-Agent Platform</title>
     <link rel="stylesheet" href="/static/style.css">
+    <!-- Markdown rendering library -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>🔍 SRE AI Agent - Observability Platform</h1>
-            <p>AutoGen 기반 통합 관찰가능성 분석 시스템 - Metrics, Logs, Traces를 통한 인텔리전트 SRE 지원</p>
-            <div class="platform-status">
-                <div class="platform-item prometheus">
-                    <span class="status-indicator active"></span>
-                    <strong>Prometheus</strong> - 메트릭 수집 & 분석
+        <header class="header">
+            <h1>� SRE AI Agent v3.0</h1>
+            <p>Conversational Multi-Agent Platform - Dynamic Swarm Collaboration</p>
+            <div class="status-bar">
+                <div class="status-item active">
+                    <span class="status-dot active"></span>
+                    <strong>Prometheus</strong>
                 </div>
-                <div class="platform-item loki">
-                    <span class="status-indicator pending"></span>
-                    <strong>Loki</strong> - 로그 집계 & 검색 (준비중)
+                <div class="status-item active">
+                    <span class="status-dot active"></span>
+                    <strong>Loki</strong>
                 </div>
-                <div class="platform-item trace">
-                    <span class="status-indicator pending"></span>
-                    <strong>Trace</strong> - 분산 추적 (준비중)
+                <div class="status-item active">
+                    <span class="status-dot active"></span>
+                    <strong>Swarm AI</strong>
                 </div>
             </div>
-        </div>
+        </header>
         
-        <div class="chat-container">
-            <div class="chat-area">
-                <div id="messages"></div>
-                <div class="input-area">
-                    <!-- Chat Mode Selection -->
-                    <div class="mode-selection">
-                        <div class="mode-header">
-                            <h4>🤖 분석 모드 선택</h4>
+        <main class="main-content">
+            <div class="chat-section">
+                <div class="agents-panel">
+                    <h3>Active Agents</h3>
+                    <div class="agents-grid">
+                        <div class="agent-badge orchestrator" title="Routes conversations to appropriate experts">
+                            <span class="agent-icon">🎯</span>
+                            <span>Orchestrator</span>
                         </div>
-                        <div class="mode-options">
-                            <label class="mode-option">
-                                <input type="radio" name="chatMode" value="team" checked>
-                                <span class="mode-label">
-                                    <strong>🚀 Multi-Agent 팀</strong>
-                                    <small>Analysis + Metric + Recommendation 에이전트 협업</small>
-                                </span>
-                            </label>
-                            <label class="mode-option">
-                                <input type="radio" name="chatMode" value="individual">
-                                <span class="mode-label">
-                                    <strong>📈 Metric Agent</strong>
-                                    <small>Prometheus 메트릭 전문 분석 (질문에 'metric' 포함)</small>
-                                </span>
-                            </label>
+                        <div class="agent-badge metric" title="Analyzes Prometheus metrics and resource usage">
+                            <span class="agent-icon">📊</span>
+                            <span>Metric Expert</span>
+                        </div>
+                        <div class="agent-badge log" title="Searches and analyzes Loki logs">
+                            <span class="agent-icon">📋</span>
+                            <span>Log Expert</span>
+                        </div>
+                        <div class="agent-badge analysis" title="Performs root cause analysis">
+                            <span class="agent-icon">🔬</span>
+                            <span>Analyst</span>
+                        </div>
+                        <div class="agent-badge report" title="Generates comprehensive reports">
+                            <span class="agent-icon">📈</span>
+                            <span>Reporter</span>
                         </div>
                     </div>
-                    
-                    <div class="quick-actions">
-                        <button class="quick-btn" data-query="전체 클러스터 상태를 확인해줘">🏗️ 클러스터 상태</button>
-                        <button class="quick-btn" data-query="CPU/메모리 사용량이 높은 Pod를 찾아줘">📈 리소스 분석</button>
-                        <button class="quick-btn" data-query="최근 에러가 발생한 서비스를 찾아줘">🚨 에러 분석</button>
-                        <button class="quick-btn" data-query="성능 병목 지점을 분석해줘">⚡ 성능 분석</button>
-                    </div>
-                    <textarea id="messageInput" placeholder="observability 질문을 입력하세요... (예: monitoring 네임스페이스의 장애 상황을 분석해줘)" rows="3"></textarea>
-                    <div class="send-button-container">
-                        <button id="sendButton">분석 시작</button>
+                </div>
+                
+                <div class="quick-actions">
+                    <button class="quick-btn" data-query="Show me pods with high CPU usage">📊 High CPU Pods</button>
+                    <button class="quick-btn" data-query="Find errors in the last hour">� Recent Errors</button>
+                    <button class="quick-btn" data-query="Why is my pod crashing?">🚨 Pod Crash Analysis</button>
+                    <button class="quick-btn" data-query="Give me a system health report">📈 Health Report</button>
+                </div>
+                
+                <div id="messages" class="messages"></div>
+                
+                <div class="input-section">
+                    <div class="input-controls">
+                        <textarea id="messageInput" placeholder="Ask me anything about your Kubernetes cluster..." rows="3"></textarea>
+                        <div class="button-group">
+                            <button id="sendButton">💬 Send</button>
+                            <button id="reportButton" class="secondary">📊 Generate Report</button>
+                        </div>
                     </div>
                 </div>
             </div>
             
-            <div class="status-area">
-                <h3>� 연결 상태</h3>
-                <div id="connectionStatus">
-                    <span class="connection-status connecting"></span>시스템 연결 중...
-                </div>
-                
-                <h3>🤖 AI Agent 상태</h3>
-                <div id="agentStatus">
-                    <div class="status-item">AI 에이전트 초기화 중...</div>
-                </div>
-                
-                <h3>�️ 분석 도구</h3>
-                <div class="tools-grid">
-                    <div class="tool-item prometheus-tool">
-                        <strong>📊 Prometheus</strong>
-                        <small>메트릭 수집 및 분석</small>
+            <aside class="sidebar">
+                <section class="sidebar-section">
+                    <h3>Connection</h3>
+                    <div id="connectionStatus">
+                        <span class="status-dot connecting"></span>Connecting...
                     </div>
-                    <div class="tool-item loki-tool disabled">
-                        <strong>📝 Loki</strong>
-                        <small>로그 집계 (준비중)</small>
-                    </div>
-                    <div class="tool-item trace-tool disabled">
-                        <strong>🔍 Trace</strong>
-                        <small>분산 추적 (준비중)</small>
-                    </div>
-                    <div class="tool-item k8s-tool">
-                        <strong>⚙️ Kubernetes</strong>
-                        <small>클러스터 관리</small>
-                    </div>
-                </div>
+                </section>
                 
-                <h3>💡 분석 예시</h3>
-                <div class="examples-list">
-                    <div class="example-item">• "production 네임스페이스 장애 분석"</div>
-                    <div class="example-item">• "높은 CPU 사용량 원인 파악"</div>
-                    <div class="example-item">• "서비스 응답 시간 분석"</div>
-                    <div class="example-item">• "메모리 누수 패턴 탐지"</div>
-                    <div class="example-item">• "네트워크 병목 지점 찾기"</div>
-                </div>
+                <section class="sidebar-section">
+                    <h3>Agent Status</h3>
+                    <div id="agentStatus">
+                        <div class="status-item">Initializing...</div>
+                    </div>
+                </section>
                 
-                <h3>⚡ SRE 명령어</h3>
-                <div class="commands-list">
-                    <div class="command-item">• <code>help</code> - 도움말 및 기능 안내</div>
-                    <div class="command-item">• <code>status</code> - 전체 시스템 상태</div>
-                    <div class="command-item">• <code>incident</code> - 인시던트 분석</div>
-                    <div class="command-item">• <code>metrics</code> - 핵심 메트릭 조회</div>
-                    <div class="command-item">• <code>reset</code> - 분석 세션 초기화</div>
-                </div>
-            </div>
-        </div>
+                <section class="sidebar-section">
+                    <h3>Architecture</h3>
+                    <div class="components-grid">
+                        <div class="component-item orchestrator">
+                            <strong>🎯 Swarm Team</strong>
+                            <small>Dynamic HandOff</small>
+                        </div>
+                        <div class="component-item log-team">
+                            <strong>📋 Conversational</strong>
+                            <small>Context-aware</small>
+                        </div>
+                        <div class="component-item metric-team">
+                            <strong>📊 Streaming</strong>
+                            <small>Real-time</small>
+                        </div>
+                        <div class="component-item action-team">
+                            <strong>⚡ Parallel Tools</strong>
+                            <small>Fast execution</small>
+                        </div>
+                        <div class="component-item context">
+                            <strong>📦 AutoGen 0.7</strong>
+                            <small>Multi-agent</small>
+                        </div>
+                        <div class="component-item tools">
+                            <strong>🔧 Azure OpenAI</strong>
+                            <small>GPT-4o</small>
+                        </div>
+                    </div>
+                </section>
+                
+                <section class="sidebar-section">
+                    <h3>Examples</h3>
+                    <div class="examples">
+                        <div class="example-item">• "Why is my pod crashing?"</div>
+                        <div class="example-item">• "Show me high CPU pods"</div>
+                        <div class="example-item">• "Find errors in last hour"</div>
+                        <div class="example-item">• "Give me a health report"</div>
+                    </div>
+                </section>
+            </aside>
+        </main>
     </div>
-
+    
     <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
     <script src="/static/chat.js"></script>
 </body>

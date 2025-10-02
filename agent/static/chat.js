@@ -1,11 +1,22 @@
+/**
+ * SRE Agent v3.0 Chat Interface
+ * 
+ * Conversational Multi-Agent WebSocket Chat Client
+ * Dynamic Swarm collaboration with HandOff pattern
+ */
+
 class ChatApp {
     constructor() {
         this.ws = null;
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
+        this.reportButton = document.getElementById('reportButton');
         this.messagesDiv = document.getElementById('messages');
         this.connectionStatus = document.getElementById('connectionStatus');
         this.agentStatus = document.getElementById('agentStatus');
+        
+        this.activeAgents = new Set();
+        this.conversationMessages = [];
         
         this.initEventListeners();
         this.connect();
@@ -13,6 +24,12 @@ class ChatApp {
     
     initEventListeners() {
         this.sendButton.addEventListener('click', () => this.sendMessage());
+        
+        this.reportButton.addEventListener('click', () => {
+            this.messageInput.value = 'Give me a comprehensive report';
+            this.sendMessage();
+        });
+        
         this.messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -20,13 +37,11 @@ class ChatApp {
             }
         });
         
-        // Auto-resize textarea
         this.messageInput.addEventListener('input', (e) => {
             e.target.style.height = 'auto';
             e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
         });
         
-        // Quick action buttons
         document.querySelectorAll('.quick-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const query = e.target.getAttribute('data-query');
@@ -42,11 +57,14 @@ class ChatApp {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws`;
         
-        this.updateConnectionStatus('connecting', '연결 중...');
+        this.updateConnectionStatus('connecting', '🔄 Connecting...');
         this.ws = new WebSocket(wsUrl);
         
         this.ws.onopen = () => {
-            console.log('WebSocket connection established');
+            console.log('✅ WebSocket connected');
+            this.updateConnectionStatus('connected', '✅ Connected');
+            this.updateAgentStatus('Conversational AI System v3.0 Ready');
+            this.addSystemMessage('� Ready for conversation! Ask me anything about your Kubernetes cluster.');
         };
         
         this.ws.onmessage = (event) => {
@@ -54,25 +72,19 @@ class ChatApp {
                 const data = JSON.parse(event.data);
                 this.handleMessage(data);
             } catch (error) {
-                console.error('Error parsing message:', error);
+                console.error('❌ Error parsing message:', error);
             }
         };
         
-        this.ws.onclose = (event) => {
-            console.log('WebSocket connection closed:', event.code, event.reason);
-            this.updateConnectionStatus('disconnected', '🔴 연결 끊김');
-            this.addSystemMessage('❌ SRE Agent 연결이 끊어졌습니다. 시스템을 재시작하는 중...');
-            
-            // 자동 재연결 시도 (5초 후)
-            setTimeout(() => {
-                console.log('Attempting to reconnect...');
-                this.connect();
-            }, 5000);
+        this.ws.onclose = () => {
+            console.log('🔌 WebSocket closed');
+            this.updateConnectionStatus('disconnected', '⚠️ Disconnected');
+            setTimeout(() => this.connect(), 5000);
         };
         
         this.ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
-            this.updateConnectionStatus('disconnected', '🚨 연결 오류 - 시스템 점검 필요');
+            console.error('❌ WebSocket error:', error);
+            this.updateConnectionStatus('error', '❌ Connection Error');
         };
     }
     
@@ -80,239 +92,389 @@ class ChatApp {
         const message = this.messageInput.value.trim();
         if (!message) return;
         
-        // 채팅 모드 확인
-        const chatMode = document.querySelector('input[name="chatMode"]:checked').value;
-        
-        // SRE 특수 명령어 처리
+        // Handle special commands
         if (message.toLowerCase() === 'clear') {
             this.messagesDiv.innerHTML = '';
             this.messageInput.value = '';
-            this.addSystemMessage('💫 채팅 히스토리가 초기화되었습니다.');
+            this.addSystemMessage('🧹 Chat history cleared');
             return;
         }
         
-        if (message.toLowerCase() === 'status') {
-            this.addSystemMessage('🔍 전체 시스템 상태 조회 중...');
-            this.messageInput.value = '전체 클러스터와 관찰가능성 시스템의 상태를 확인해줘';
-        }
-        
         if (message.toLowerCase() === 'help') {
-            this.addSystemMessage(`
-                🤖 <strong>SRE AI Agent 사용 가이드</strong><br>
-                • <code>status</code> - 전체 시스템 상태 확인<br>
-                • <code>incident</code> - 인시던트 분석 모드<br>
-                • <code>metrics</code> - 핵심 메트릭 조회<br>
-                • <code>clear</code> - 채팅 기록 초기화<br><br>
-                📊 <strong>분석 예시:</strong><br>
-                • "production 네임스페이스 장애 분석해줘"<br>
-                • "CPU 사용량이 높은 서비스 찾아줘"<br>
-                • "최근 에러 로그 패턴 분석"
-            `);
+            this.showHelp();
             this.messageInput.value = '';
             return;
         }
         
         this.addMessage('user', message);
         this.messageInput.value = '';
+        this.messageInput.style.height = 'auto';
         this.sendButton.disabled = true;
         
+        // Send to server (v3.0 format - no mode)
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            const message_data = { 
-                type: 'chat', 
-                message: message,
-                mode: chatMode 
-            };
-            
-            // 개별 모드인 경우 agent_type 추가
-            if (chatMode === 'individual') {
-                message_data.agent_type = 'metric_analyze_agent';  // 기본값
-            }
-            
-            this.ws.send(JSON.stringify(message_data));
+            this.ws.send(JSON.stringify({
+                type: 'chat',
+                message: message
+            }));
         } else {
-            this.addSystemMessage('❌ SRE Agent와의 연결이 끊어져 있습니다. 시스템 관리자에게 문의하세요.');
+            this.addSystemMessage('❌ Not connected to server');
             this.sendButton.disabled = false;
         }
     }
     
     handleMessage(data) {
-        console.log('Received message:', data);
+        console.log('📩 Received:', data.type, data);
         
         switch (data.type) {
-            case 'connection_status':
-                if (data.status === 'connected') {
-                    this.updateConnectionStatus('connected', '연결됨');
-                    this.addSystemMessage('✅ 서버에 연결되었습니다.');
-                } else if (data.status === 'ready') {
-                    this.updateConnectionStatus('ready', 'Multi-Agent 시스템 준비 완료');
-                    this.addSystemMessage('🚀 Multi-Agent SRE 시스템 준비 완료! 메시지를 입력해주세요.');
-                    this.updateAgentStatus(data.agent_status);
-                }
+            case 'status':
+                this.addSystemMessage(`⏳ ${data.message}`);
                 break;
-                
-            case 'processing':
-                this.addProcessingMessage(data.message);
+            case 'chat_start':
+                this.handleChatStart(data);
                 break;
-                
-            case 'agent_start':
-                this.removeProcessingMessages();
-                this.addAgentStartMessage(data.agent, data.message);
+            case 'agent_message':
+                this.handleAgentMessage(data);
                 break;
-                
-            case 'team_start':
-                this.removeProcessingMessages();
-                this.addSystemMessage(`🚀 ${data.message} (모드: ${data.mode === 'team' ? '팀 채팅' : '개별 에이전트'})`);
+            case 'chat_complete':
+                this.handleChatComplete(data);
                 break;
-                
-            case 'team_message':
-                this.addTeamMessage(data.agent, data.message, data.sequence, data.total);
-                break;
-                
-            case 'team_complete':
-                this.addSystemMessage(`🎉 ${data.message}<br><small>${data.summary}</small>`);
-                this.sendButton.disabled = false;
-                break;
-                
-            case 'individual_start':
-                this.removeProcessingMessages();
-                this.addSystemMessage(`🤖 ${data.message} (모드: 개별 에이전트)`);
-                break;
-                
-            case 'individual_progress':
-                // 실시간 진행 상태 업데이트
-                this.updateProgressMessage(data.message, data.step, data.total_steps);
-                break;
-                
-            case 'individual_response':
-                this.removeProgressMessages(); // 진행 메시지 제거
-                this.addAgentResponse(data.agent, data.display_name, data.response);
-                break;
-                
-            case 'individual_complete':
-                this.addAgentCompleteMessage(data.agent, data.message);
-                this.sendButton.disabled = false;
-                break;
-                
-            case 'agent_response':
-                this.addAgentResponse(data.agent, data.display_name, data.response);
-                break;
-                
-            case 'agent_complete':
-                this.addAgentCompleteMessage(data.agent, data.message);
-                break;
-                
-            case 'workflow_complete':
-                this.addSystemMessage(`🎉 ${data.message}<br><small>${data.summary}</small>`);
-                this.sendButton.disabled = false;
-                break;
-                
-            case 'chat_response':
-                this.removeProcessingMessages();
-                this.addMessage('agent', data.response);
-                this.updateAgentStatus(data.agent_status);
-                this.sendButton.disabled = false;
-                break;
-                
             case 'error':
-                this.removeProcessingMessages();
-                this.addMessage('system', `❌ 오류: ${data.error}`);
+                this.addSystemMessage(`❌ ${data.message}`);
                 this.sendButton.disabled = false;
                 break;
-                
             default:
-                console.warn('Unknown message type:', data.type);
+                console.log('Unknown message type:', data.type);
         }
     }
     
-    addTeamMessage(agent, message, sequence, total) {
+    handleChatStart(data) {
+        this.addSystemMessage(data.message || '🚀 Starting analysis...');
+        this.activeAgents.clear();
+        this.updateActiveAgents();
+    }
+    
+    handleAgentMessage(data) {
+        const agentName = data.agent || 'Agent';
+        const message = data.message || '';
+        
+        // Skip messages that contain raw message objects
+        if (message.includes('messages=[') || message.includes('TextMessage(')) {
+            console.log('⚠️ Skipping raw message object:', message.substring(0, 100));
+            return;
+        }
+        
+        // Track active agent
+        this.activeAgents.add(agentName);
+        this.updateActiveAgents();
+        
+        // Skip very short messages
+        if (!message || message.trim().length < 5) {
+            return;
+        }
+        
+        this.addAgentMessageStreaming(agentName, message);
+    }
+    
+    addAgentMessageStreaming(agent, content) {
         const messageDiv = document.createElement('div');
-        messageDiv.className = 'message team-message';
+        const isPresentation = agent.toLowerCase().includes('presentation');
+        const collapsed = !isPresentation;  // Only presentation agent expanded by default
+        
+        messageDiv.className = `message assistant-message agent-message streaming ${collapsed ? 'collapsed' : ''}`;
+        messageDiv.dataset.agent = agent;
+        
+        const agentIcon = this.getAgentIcon(agent);
+        const toggleIcon = collapsed ? '▶' : '▼';
+        
         messageDiv.innerHTML = `
-            <div class="team-message-header">
-                <span class="team-indicator">🤝</span>
-                <strong>Team Message ${sequence}/${total}</strong>
+            <div class="message-header collapsible" onclick="this.parentElement.classList.toggle('collapsed')">
+                <span class="toggle-icon">${toggleIcon}</span>
+                <span class="agent-icon">${agentIcon}</span>
                 <span class="agent-name">${agent}</span>
+                <span class="streaming-indicator">●</span>
             </div>
-            <div class="message-content">
-                ${marked.parse(message)}
-            </div>
+            <div class="message-content ${isPresentation ? 'markdown-content' : ''}">${this.formatAgentContent(content, isPresentation)}</div>
         `;
+        
+        this.messagesDiv.appendChild(messageDiv);
+        this.scrollToBottom();
+        
+        // Remove streaming indicator after a moment
+        setTimeout(() => {
+            const indicator = messageDiv.querySelector('.streaming-indicator');
+            if (indicator) {
+                indicator.style.opacity = '0';
+            }
+        }, 1000);
+    }
+    
+    formatAgentContent(content, isMarkdown = false) {
+        if (isMarkdown && typeof marked !== 'undefined') {
+            // Render markdown for presentation agent
+            try {
+                return marked.parse(content);
+            } catch (e) {
+                console.error('Markdown parsing error:', e);
+                return this.escapeHtml(content).replace(/\n/g, '<br>');
+            }
+        }
+        
+        // Format agent messages more naturally
+        let formatted = this.escapeHtml(content);
+        
+        // Don't show system messages like "TERMINATE"
+        if (formatted.includes('TERMINATE') || formatted.includes('Transferred to')) {
+            return '';
+        }
+        
+        // Basic markdown-style formatting for non-presentation agents
+        formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        formatted = formatted.replace(/`([^`]+)`/g, '<code>$1</code>');
+        formatted = formatted.replace(/\n\n/g, '<br><br>');
+        formatted = formatted.replace(/\n/g, '<br>');
+        
+        return formatted;
+    }
+    
+    
+    handleChatComplete(data) {
+        // Final response from the workflow
+        const message = data.message || 'Analysis completed';
+        const agents = data.agents_participated || [];
+        
+        console.log('💬 Chat complete - Message:', message);
+        console.log('👥 Agents participated:', agents);
+        
+        // Add the final response if it's meaningful
+        if (message && message.length > 20 && !message.includes('messages=[')) {
+            console.log('✅ Adding final message to chat');
+            this.addMessage('assistant', message);
+        } else {
+            console.warn('⚠️ Message filtered or too short:', message.substring(0, 100));
+        }
+        
+        // Show which agents participated
+        if (agents.length > 0) {
+            const agentList = agents
+                .filter(a => a !== 'user')  // Filter out 'user'
+                .map(a => this.getAgentIcon(a) + ' ' + a)
+                .join(', ');
+            
+            if (agentList) {
+                this.updateAgentStatus(`✅ Completed with: ${agentList}`);
+                // Also add a system message showing completion
+                this.addSystemMessage(`✨ Analysis completed by: ${agentList}`);
+            }
+        }
+        
+        // Re-enable send button
+        this.sendButton.disabled = false;
+        
+        // Clear active agents after a delay
+        setTimeout(() => {
+            this.activeAgents.clear();
+            this.updateActiveAgents();
+        }, 2000);
+    }
+    
+    formatAgentContent(content) {
+        // Format agent messages more naturally
+        let formatted = this.escapeHtml(content);
+        
+        // Don't show system messages like "TERMINATE"
+        if (formatted.includes('TERMINATE') || formatted.includes('Transferred to')) {
+            return '';
+        }
+        
+        // Basic markdown-style formatting
+        formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        formatted = formatted.replace(/`([^`]+)`/g, '<code>$1</code>');
+        formatted = formatted.replace(/\n\n/g, '<br><br>');
+        formatted = formatted.replace(/\n/g, '<br>');
+        
+        return formatted;
+    }
+    
+    handleFinalSummary(data) {
+        // Natural conversational summary
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message assistant-message final-summary';
+        
+        messageDiv.innerHTML = `
+            <div class="message-header">
+                <span class="agent-icon">💡</span>
+                <span class="agent-name">Summary</span>
+            </div>
+            <div class="message-content">${this.formatMarkdown(data.message)}</div>
+        `;
+        
         this.messagesDiv.appendChild(messageDiv);
         this.scrollToBottom();
     }
     
-    addAgentStartMessage(agent, message) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message agent-start-message';
-        messageDiv.innerHTML = `
-            <div class="agent-start-content">
-                <span class="agent-indicator">🔄</span>
-                ${message}
-            </div>
-        `;
-        this.messagesDiv.appendChild(messageDiv);
-        this.scrollToBottom();
+    handleAnalysisStart(data) {
+        if (this.currentProgressDiv) {
+            this.currentProgressDiv.remove();
+        }
+        
+        this.addSystemMessage(`${data.message}`);
+        
+        if (data.teams && data.teams.length > 0) {
+            const teamsText = `Teams: ${data.teams.join(', ')}`;
+            this.addSystemMessage(`<small>�� ${teamsText}</small>`);
+        }
+        
+        this.conversationMessages = [];
     }
     
-    addAgentResponse(agent, displayName, response) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message agent-response-message';
+    handleProgress(data) {
+        if (!this.currentProgressDiv) {
+            this.currentProgressDiv = document.createElement('div');
+            this.currentProgressDiv.className = 'message system-message progress-message';
+            this.messagesDiv.appendChild(this.currentProgressDiv);
+        }
         
-        const timestamp = new Date().toLocaleTimeString();
-        const renderedContent = marked.parse(response);
+        const percentage = data.percentage || 0;
+        const step = data.step || 0;
+        const totalSteps = data.total_steps || 4;
         
-        messageDiv.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                <div>
-                    <strong>${displayName}:</strong><br>
-                    <div class="markdown-content">${renderedContent}</div>
+        this.currentProgressDiv.innerHTML = `
+            <div class="progress-container">
+                <div class="progress-text">${data.message}</div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" style="width: ${percentage}%"></div>
                 </div>
-                <small style="color: #666; font-size: 11px;">${timestamp}</small>
+                <div class="progress-steps">Step ${step} of ${totalSteps} (${percentage}%)</div>
             </div>
         `;
+        
+        this.scrollToBottom();
+    }
+    
+    handleConversationMessage(data) {
+        const agent = data.agent || 'Agent';
+        const message = data.message || '';
+        const sequence = data.sequence || 1;
+        const total = data.total || 1;
+        
+        this.conversationMessages.push({ agent, message, sequence });
+        this.addAgentMessage(agent, message, sequence, total);
+    }
+    
+    handleFinalResult(data) {
+        if (this.currentProgressDiv) {
+            this.currentProgressDiv.remove();
+            this.currentProgressDiv = null;
+        }
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message assistant-message final-result';
+        
+        let html = `<div class="agent-name">🎯 Final Analysis</div>`;
+        html += `<div class="message-content">${this.formatMarkdown(data.message)}</div>`;
+        
+        if (data.metadata) {
+            html += `<div class="result-metadata">`;
+            if (data.confidence) {
+                const confidencePercent = (data.confidence * 100).toFixed(0);
+                html += `<span class="metadata-item">Confidence: ${confidencePercent}%</span>`;
+            }
+            if (data.actions_count > 0) {
+                html += `<span class="metadata-item">Actions: ${data.actions_count}</span>`;
+            }
+            if (data.metadata.incident_id) {
+                html += `<span class="metadata-item">ID: ${data.metadata.incident_id}</span>`;
+            }
+            html += `</div>`;
+        }
+        
+        messageDiv.innerHTML = html;
         this.messagesDiv.appendChild(messageDiv);
         this.scrollToBottom();
     }
     
-    addAgentCompleteMessage(agent, message) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message agent-complete-message';
-        messageDiv.innerHTML = `
-            <div class="agent-complete-content">
-                <span class="agent-indicator">✅</span>
-                ${message}
-            </div>
-        `;
-        this.messagesDiv.appendChild(messageDiv);
-        this.scrollToBottom();
+    handleAnalysisComplete(data) {
+        this.addSystemMessage(`${data.message}`);
+        
+        if (data.summary) {
+            let summaryHtml = '<div class="analysis-summary"><strong>Summary:</strong><br>';
+            
+            if (data.summary.messages_exchanged) {
+                summaryHtml += `📝 Messages: ${data.summary.messages_exchanged}<br>`;
+            }
+            if (data.summary.actions_count) {
+                summaryHtml += `🎯 Actions: ${data.summary.actions_count}<br>`;
+            }
+            if (data.summary.confidence !== undefined) {
+                summaryHtml += `📊 Confidence: ${(data.summary.confidence * 100).toFixed(0)}%<br>`;
+            }
+            
+            summaryHtml += '</div>';
+            this.addSystemMessage(summaryHtml);
+        }
+        
+        this.sendButton.disabled = false;
+    }
+    
+    handleError(data) {
+        if (this.currentProgressDiv) {
+            this.currentProgressDiv.remove();
+            this.currentProgressDiv = null;
+        }
+        
+        this.addSystemMessage(`❌ Error: ${data.message || data.error || 'Unknown error'}`);
+        this.sendButton.disabled = false;
     }
     
     addMessage(sender, content) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${sender}-message`;
         
-        const timestamp = new Date().toLocaleTimeString();
-        
         if (sender === 'user') {
             messageDiv.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                    <div><strong>💬 You:</strong><br>${this.escapeHtml(content)}</div>
-                    <small style="color: rgba(255,255,255,0.7); font-size: 11px;">${timestamp}</small>
+                <div class="message-header">
+                    <span class="sender-name">You</span>
                 </div>
+                <div class="message-content">${this.escapeHtml(content)}</div>
             `;
-        } else if (sender === 'agent') {
-            // 에이전트 응답은 마크다운으로 렌더링
-            const renderedContent = marked.parse(content);
+        } else if (sender === 'assistant') {
+            // Format assistant messages with proper styling
+            const formattedContent = this.formatAgentContent(content);
             messageDiv.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                    <div><strong>🤖 SRE Agent:</strong><br><div class="markdown-content">${renderedContent}</div></div>
-                    <small style="color: #666; font-size: 11px;">${timestamp}</small>
+                <div class="message-header">
+                    <span class="agent-icon">🤖</span>
+                    <span class="agent-name">AI Assistant</span>
                 </div>
+                <div class="message-content">${formattedContent}</div>
             `;
         } else {
-            messageDiv.innerHTML = content;
-            messageDiv.className = 'message system-message';
+            // Fallback for other message types
+            messageDiv.innerHTML = `
+                <div class="message-content">${this.escapeHtml(content)}</div>
+            `;
         }
+        
+        this.messagesDiv.appendChild(messageDiv);
+        this.scrollToBottom();
+        
+        console.log('✅ Message added to DOM:', sender, content.substring(0, 100));
+    }
+    
+    addAgentMessage(agent, content, sequence, total) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message assistant-message agent-message';
+        
+        const agentIcon = this.getAgentIcon(agent);
+        
+        messageDiv.innerHTML = `
+            <div class="message-header">
+                <span class="agent-icon">${agentIcon}</span>
+                <span class="agent-name">${agent}</span>
+                <span class="message-sequence">[${sequence}/${total}]</span>
+            </div>
+            <div class="message-content">${this.escapeHtml(content)}</div>
+        `;
         
         this.messagesDiv.appendChild(messageDiv);
         this.scrollToBottom();
@@ -321,115 +483,142 @@ class ChatApp {
     addSystemMessage(content) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message system-message';
-        messageDiv.innerHTML = content;
+        messageDiv.innerHTML = `<div class="message-content">${content}</div>`;
         this.messagesDiv.appendChild(messageDiv);
         this.scrollToBottom();
     }
     
-    addProcessingMessage(content) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message processing-message';
-        messageDiv.innerHTML = content;
-        messageDiv.setAttribute('data-processing', 'true');
-        this.messagesDiv.appendChild(messageDiv);
-        this.scrollToBottom();
-    }
-    
-    removeProcessingMessages() {
-        const processingMessages = this.messagesDiv.querySelectorAll('[data-processing="true"]');
-        processingMessages.forEach(msg => msg.remove());
-    }
-    
-    updateProgressMessage(message, step, totalSteps) {
-        // 기존 진행 메시지 찾기 또는 생성
-        let progressMsg = this.messagesDiv.querySelector('[data-progress="true"]');
-        if (!progressMsg) {
-            progressMsg = document.createElement('div');
-            progressMsg.className = 'message processing-message';
-            progressMsg.setAttribute('data-progress', 'true');
-            this.messagesDiv.appendChild(progressMsg);
+    getAgentIcon(agentName) {
+        const icons = {
+            'coordinator': '🎯',
+            'orchestrator': '🎯',
+            'triage': '�',
+            'log': '📋',
+            'metric': '📊',
+            'metrics': '📊',
+            'action': '🎬',
+            'prometheus': '📈',
+            'loki': '🔍',
+            'summarizer': '📝',
+            'analyzer': '�',
+            'recommendation': '💡',
+            'guard': '🛡️',
+            'query': '🔎',
+        };
+        
+        const nameLower = agentName.toLowerCase();
+        for (const [key, icon] of Object.entries(icons)) {
+            if (nameLower.includes(key)) {
+                return icon;
+            }
         }
         
-        // 진행 바와 메시지 업데이트
-        const percentage = Math.round((step / totalSteps) * 100);
-        progressMsg.innerHTML = `
-            <div style="margin-bottom: 8px;">${message}</div>
-            <div style="background: rgba(255,255,255,0.1); border-radius: 10px; height: 6px; overflow: hidden;">
-                <div style="background: #4CAF50; height: 100%; width: ${percentage}%; transition: width 0.5s ease;"></div>
-            </div>
-            <small style="color: rgba(255,255,255,0.7);">단계 ${step}/${totalSteps} (${percentage}%)</small>
-        `;
-        this.scrollToBottom();
+        return '🤖';
     }
     
-    removeProgressMessages() {
-        const progressMessages = this.messagesDiv.querySelectorAll('[data-progress="true"]');
-        progressMessages.forEach(msg => msg.remove());
-    }
-    
-    updateConnectionStatus(status, text) {
-        this.connectionStatus.innerHTML = `<span class="connection-status ${status}"></span>${text}`;
-    }
-    
-    updateAgentStatus(status) {
-        if (!status) return;
-        
-        let html = '';
-        if (status.initialized) {
-            html += `<div class="status-item">✅ SRE Agent 활성화 완료</div>`;
-            if (status.current_step) {
-                html += `<div class="status-item">📍 현재 단계: ${status.current_step}</div>`;
-            }
-            if (status.analysis_state) {
-                const state = status.analysis_state;
-                html += `<div class="status-item">
-                    📊 <strong>분석 진행 상황</strong><br>
-                    <div class="analysis-progress">
-                        <div class="progress-item ${state.essential_metrics_collected ? 'completed' : 'pending'}">
-                            <span class="progress-icon">${state.essential_metrics_collected ? '✅' : '🔄'}</span>
-                            <span class="progress-text">기본 시스템 메트릭 수집</span>
-                        </div>
-                        <div class="progress-item ${state.metric_names_explored ? 'completed' : 'pending'}">
-                            <span class="progress-icon">${state.metric_names_explored ? '✅' : '🔍'}</span>
-                            <span class="progress-text">사용 가능한 메트릭 탐색</span>
-                        </div>
-                        <div class="progress-item ${state.detailed_metrics_queried ? 'completed' : 'pending'}">
-                            <span class="progress-icon">${state.detailed_metrics_queried ? '✅' : '📈'}</span>
-                            <span class="progress-text">상세 데이터 쿠리 수행</span>
-                        </div>
-                        <div class="progress-item ${state.targets_checked ? 'completed' : 'pending'}">
-                            <span class="progress-icon">${state.targets_checked ? '✅' : '🎯'}</span>
-                            <span class="progress-text">모니터링 대상 상태 확인</span>
-                        </div>
-                    </div>
-                </div>`;
-            }
-        } else {
-            html = '<div class="status-item">⏳ SRE Agent 초기화 대기 중...</div>';
+    updateConnectionStatus(status, message) {
+        const statusDot = this.connectionStatus.querySelector('.status-dot');
+        if (statusDot) {
+            statusDot.className = `status-dot ${status}`;
         }
-        
-        this.agentStatus.innerHTML = html;
+        const statusText = this.connectionStatus.querySelector('span:last-child');
+        if (statusText) {
+            statusText.textContent = message;
+        }
     }
     
-    escapeHtml(unsafe) {
-        return unsafe
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;")
-            .replace(/\n/g, "<br>");
+    updateAgentStatus(message) {
+        if (this.agentStatus) {
+            this.agentStatus.innerHTML = `<div class="status-item">${message}</div>`;
+        }
+    }
+    
+    updateActiveAgents() {
+        // Highlight active agent badges
+        document.querySelectorAll('.agent-badge').forEach(badge => {
+            badge.classList.remove('active');
+        });
+        
+        this.activeAgents.forEach(agentName => {
+            const agentLower = agentName.toLowerCase();
+            if (agentLower.includes('orchestrator')) {
+                document.querySelector('.agent-badge.orchestrator')?.classList.add('active');
+            } else if (agentLower.includes('metric')) {
+                document.querySelector('.agent-badge.metric')?.classList.add('active');
+            } else if (agentLower.includes('log')) {
+                document.querySelector('.agent-badge.log')?.classList.add('active');
+            } else if (agentLower.includes('analyst') || agentLower.includes('analysis')) {
+                document.querySelector('.agent-badge.analysis')?.classList.add('active');
+            } else if (agentLower.includes('report')) {
+                document.querySelector('.agent-badge.report')?.classList.add('active');
+            }
+        });
     }
     
     scrollToBottom() {
-        setTimeout(() => {
-            this.messagesDiv.scrollTop = this.messagesDiv.scrollHeight;
-        }, 100);
+        this.messagesDiv.scrollTop = this.messagesDiv.scrollHeight;
+    }
+    
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    formatMarkdown(text) {
+        let formatted = this.escapeHtml(text);
+        formatted = formatted.replace(/## (.*?)$/gm, '<h3>$1</h3>');
+        formatted = formatted.replace(/# (.*?)$/gm, '<h2>$1</h2>');
+        formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        formatted = formatted.replace(/`([^`]+)`/g, '<code>$1</code>');
+        formatted = formatted.replace(/\n/g, '<br>');
+        return formatted;
+    }
+    
+    showHelp() {
+        const helpMessage = `
+            <div class="help-content">
+                <h3>🤖 SRE Agent v3.0 - Help</h3>
+                <p><strong>Conversational Interface:</strong></p>
+                <p>Ask questions naturally! The system will engage appropriate experts automatically.</p>
+                
+                <p><strong>Available Agents:</strong></p>
+                <ul>
+                    <li>🎯 <strong>Orchestrator</strong>: Routes your questions to specialists</li>
+                    <li>📊 <strong>Metric Expert</strong>: Analyzes Prometheus metrics</li>
+                    <li>📋 <strong>Log Expert</strong>: Searches and analyzes logs via Loki</li>
+                    <li>🔬 <strong>Analyst</strong>: Performs root cause analysis</li>
+                    <li>📈 <strong>Reporter</strong>: Generates visual reports</li>
+                </ul>
+                
+                <p><strong>Example Questions:</strong></p>
+                <ul>
+                    <li>"Why is my pod crashing?"</li>
+                    <li>"Show me high CPU pods"</li>
+                    <li>"Find errors in the last hour"</li>
+                    <li>"Give me a system health report"</li>
+                    <li>"Analyze service performance"</li>
+                </ul>
+                
+                <p><strong>Commands:</strong></p>
+                <ul>
+                    <li><code>help</code> - Show this help message</li>
+                    <li><code>clear</code> - Clear chat history</li>
+                </ul>
+                
+                <p><strong>Tips:</strong></p>
+                <ul>
+                    <li>✨ Ask follow-up questions - conversation context is maintained</li>
+                    <li>🔄 Multiple agents can collaborate on complex issues</li>
+                    <li>� Request reports anytime with "give me a report"</li>
+                </ul>
+            </div>
+        `;
+        this.addSystemMessage(helpMessage);
     }
 }
 
-// 페이지 로드 시 앱 시작
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('Starting MetricAnalyzeAgent Web Chat...');
-    new ChatApp();
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('🚀 Initializing SRE Agent v3.0 Chat Interface');
+    window.chatApp = new ChatApp();
 });
