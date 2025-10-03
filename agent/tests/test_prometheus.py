@@ -7,7 +7,7 @@ compared to the original implementation.
 
 import asyncio
 
-from src.plugins.prometheus_plugin import (
+from src.tools.prometheus_plugin import (
     prometheus_get_essential_metrics,
     prometheus_get_metric_names,
     prometheus_query_specific_metrics,

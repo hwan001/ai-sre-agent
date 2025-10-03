@@ -8,7 +8,11 @@ with AutoGen Assistant Agents.
 from datetime import datetime
 from typing import Annotated, Any
 
+import structlog
+
 from .prometheus_client import PrometheusTools
+
+logger = structlog.get_logger()
 
 # Global instance for reuse across agent calls
 _prometheus_tools_instance: PrometheusTools | None = None
@@ -64,8 +68,17 @@ async def prometheus_query_specific_metrics(
     Returns:
         Dictionary with metrics organized by name, avoiding data overload.
     """
+    logger.debug(
+        "[TOOL CALL] prometheus_query_specific_metrics invoked",
+        metric_names=metric_names,
+        namespace=namespace,
+        pod_name=pod_name,
+        limit_per_metric=limit_per_metric,
+        step=step,
+        auto_discover=auto_discover,
+    )
     tools = get_prometheus_tools(prometheus_url)
-    return await tools.query_multiple_metrics(
+    result = await tools.query_multiple_metrics(
         metric_names,
         start_time,
         end_time,
@@ -75,6 +88,12 @@ async def prometheus_query_specific_metrics(
         step,
         auto_discover,
     )
+    logger.debug(
+        "[TOOL CALL] prometheus_query_specific_metrics completed",
+        status=result.get("status"),
+        metrics_count=len(result.get("metrics", {})),
+    )
+    return result
 
 
 async def prometheus_get_essential_metrics(
@@ -118,8 +137,11 @@ async def prometheus_get_metric_names(
     metric_name: Annotated[
         str | None, "Filter metrics by name pattern (supports * and ?)"
     ] = None,
-    limit: Annotated[int, "Maximum number of metric names to return"] = 1000,
+    limit: Annotated[int, "Maximum number of metric names to return"] = 100,
     prometheus_url: Annotated[str | None, "Prometheus server URL"] = None,
+    categorize: Annotated[
+        bool, "Group metrics by category instead of listing all (default: True)"
+    ] = True,
 ) -> dict[str, Any]:
     """
     Get list of available metric names from Prometheus.
@@ -128,18 +150,24 @@ async def prometheus_get_metric_names(
     to retrieve all available metric names. Can optionally filter by namespace,
     pod name, and metric name pattern.
 
+    OPTIMIZATION: By default, categorizes metrics to avoid overwhelming output.
+    Set categorize=False to get full list (not recommended for broad searches).
+
     Args:
         namespace: Filter metrics by namespace. Optional.
         pod_name: Filter metrics by pod name pattern. Optional.
         metric_name: Filter metrics by name pattern (supports * and ?). Optional.
-        limit: Maximum number of metric names to return (default: 1000).
+        limit: Maximum number of metric names to return (default: 100).
         prometheus_url: Prometheus server URL. Optional.
+        categorize: Group metrics by category (default: True).
 
     Returns:
         Dictionary containing available metric names and filter information.
     """
     tools = get_prometheus_tools(prometheus_url)
-    return await tools.get_metric_names(namespace, pod_name, metric_name, limit)
+    return await tools.get_metric_names(
+        namespace, pod_name, metric_name, limit, categorize
+    )
 
 
 async def prometheus_get_targets(

@@ -5,6 +5,7 @@ Development runner for SRE Agent.
 Quick script to start the agent with development settings.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -20,7 +21,19 @@ sys.path.insert(0, str(src_path))
 # Import after path setup
 from configs.config import get_settings  # noqa: E402
 
-# Configure development logging
+# Get log level from environment (LOG_MODE or LOG_LEVEL)
+log_mode = os.getenv("LOG_MODE", os.getenv("LOG_LEVEL", "INFO")).upper()
+log_level_map = {
+    "DEBUG": 10,
+    "INFO": 20,
+    "WARNING": 30,
+    "WARN": 30,
+    "ERROR": 40,
+    "CRITICAL": 50,
+}
+log_level = log_level_map.get(log_mode, 20)  # Default to INFO
+
+# Configure development logging with environment-based level
 structlog.configure(
     processors=[
         structlog.stdlib.filter_by_level,
@@ -39,6 +52,12 @@ structlog.configure(
     cache_logger_on_first_use=True,
 )
 
+# Set the standard library logging level based on environment
+import logging
+
+logging.basicConfig(level=log_level, format="%(message)s")
+logging.getLogger().setLevel(log_level)
+
 
 def main():
     """Run the development server."""
@@ -56,10 +75,12 @@ def main():
     settings.development.enable_debug_logs = True
 
     logger = structlog.get_logger()
+    log_mode = os.getenv("LOG_MODE", os.getenv("LOG_LEVEL", "INFO")).upper()
     logger.info(
         "Starting SRE Agent in development mode",
         host=settings.api.host,
         port=settings.api.port,
+        log_level=log_mode,
     )
 
     # Start the server
