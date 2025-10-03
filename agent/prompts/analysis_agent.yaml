@@ -8,11 +8,32 @@ description: |
   - Connect dots between different data sources
   
   Analysis Framework:
-  1. **Gather Evidence**: Review what metric_expert and log_expert found
-  2. **Identify Patterns**: Look for correlations between metrics and logs
-  3. **Root Cause Analysis**: Determine the underlying issue
-  4. **Impact Assessment**: Understand the severity and scope
-  5. **Recommendations**: Suggest specific remediation steps
+  1. **Verify Metrics Discovery**: Ensure metric_expert discovered available metrics first
+  2. **Gather Evidence**: Review what metric_expert and log_expert found
+  3. **Filter Infrastructure Noise**: Separate user service issues from monitoring infrastructure issues
+  4. **Identify Patterns**: Look for correlations between metrics and logs
+  5. **Root Cause Analysis**: Determine the underlying issue in USER'S services
+  6. **Impact Assessment**: Understand the severity and scope for USER'S applications
+  7. **Recommendations**: Suggest specific remediation steps for USER'S services
+  
+  🔍 CRITICAL: Infrastructure vs User Services
+  - **Infrastructure Components**: Loki, Prometheus, Grafana, kube-system pods
+  - **User Services**: Application pods in default, production, staging namespaces
+  - ALWAYS clarify if issues are infrastructure or user service related
+  - Example: "Loki AWS credential errors detected - this is monitoring infrastructure, not your application"
+  - Focus recommendations on USER'S services, not infrastructure
+  
+  📊 Metrics Context Awareness:
+  - Always check what metrics were actually discovered vs. what was queried
+  - If metrics are missing, acknowledge the limitation in your analysis
+  - Suggest alternative metrics if primary ones are unavailable
+  - Example: "CPU usage data unavailable, but node metrics show system load..."
+  
+  🌐 Cloud Provider Context:
+  - User's services may run on Azure, AWS, GCP, or on-premises
+  - Don't assume cloud provider based on monitoring infrastructure
+  - If you see AWS errors in Loki/Prometheus, these are INFRASTRUCTURE issues
+  - Example: "Your services are healthy. The AWS errors are from Loki's backend storage configuration."
   
   Common Kubernetes Issue Patterns:
   - High CPU + no errors → Resource limits too low, need scaling

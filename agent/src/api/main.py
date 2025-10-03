@@ -9,13 +9,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 import structlog
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
 
 from api.chat_manager import WebChatManager
 from configs.config import get_settings
@@ -33,6 +32,15 @@ app = FastAPI(
     version="3.0.0",
 )
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Mount static files
 static_dir = Path(__file__).parent.parent.parent / "static"
 if static_dir.exists():
@@ -40,39 +48,6 @@ if static_dir.exists():
     logger.info("Static files mounted", directory=str(static_dir))
 else:
     logger.warning("Static directory not found", directory=str(static_dir))
-
-
-# Request/Response Models
-class DecisionRequest(BaseModel):
-    """Request for agent decision."""
-
-    event_type: str
-    namespace: str
-    resource_name: str
-    resource_kind: str
-    event_data: dict[str, Any]
-    context: dict[str, Any] | None = None
-
-
-class DecisionResponse(BaseModel):
-    """Agent decision response."""
-
-    incident_id: str
-    decision: str
-    confidence: float
-    recommended_actions: list[dict[str, Any]]
-    analysis_summary: str
-    workflow_version: str = "2.0"
-
-
-class WorkflowInfoResponse(BaseModel):
-    """Workflow information response."""
-
-    version: str
-    framework: str
-    architecture: str
-    features: list[str]
-    teams: dict[str, Any]
 
 
 @app.get("/")
@@ -91,7 +66,7 @@ async def root():
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    """Health check endpoint."""
+    """Basic health check endpoint."""
     return {"status": "healthy", "version": "3.0.0"}
 
 
@@ -105,7 +80,7 @@ async def startup_event():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for chat interface."""
+    """WebSocket endpoint for chat interface with v6.0 features."""
     await websocket.accept()
     logger.info("WebSocket connection accepted")
 
@@ -117,7 +92,10 @@ async def websocket_endpoint(websocket: WebSocket):
 
             logger.info("WebSocket message received", data=message_data)
 
-            if message_data.get("type") == "chat":
+            message_type = message_data.get("type")
+
+            # Traditional chat message
+            if message_type == "chat":
                 user_message = message_data.get("message", "")
 
                 # Extract optional context from message

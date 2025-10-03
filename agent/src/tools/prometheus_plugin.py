@@ -137,8 +137,11 @@ async def prometheus_get_metric_names(
     metric_name: Annotated[
         str | None, "Filter metrics by name pattern (supports * and ?)"
     ] = None,
-    limit: Annotated[int, "Maximum number of metric names to return"] = 1000,
+    limit: Annotated[int, "Maximum number of metric names to return"] = 100,
     prometheus_url: Annotated[str | None, "Prometheus server URL"] = None,
+    categorize: Annotated[
+        bool, "Group metrics by category instead of listing all (default: True)"
+    ] = True,
 ) -> dict[str, Any]:
     """
     Get list of available metric names from Prometheus.
@@ -147,18 +150,24 @@ async def prometheus_get_metric_names(
     to retrieve all available metric names. Can optionally filter by namespace,
     pod name, and metric name pattern.
 
+    OPTIMIZATION: By default, categorizes metrics to avoid overwhelming output.
+    Set categorize=False to get full list (not recommended for broad searches).
+
     Args:
         namespace: Filter metrics by namespace. Optional.
         pod_name: Filter metrics by pod name pattern. Optional.
         metric_name: Filter metrics by name pattern (supports * and ?). Optional.
-        limit: Maximum number of metric names to return (default: 1000).
+        limit: Maximum number of metric names to return (default: 100).
         prometheus_url: Prometheus server URL. Optional.
+        categorize: Group metrics by category (default: True).
 
     Returns:
         Dictionary containing available metric names and filter information.
     """
     tools = get_prometheus_tools(prometheus_url)
-    return await tools.get_metric_names(namespace, pod_name, metric_name, limit)
+    return await tools.get_metric_names(
+        namespace, pod_name, metric_name, limit, categorize
+    )
 
 
 async def prometheus_get_targets(

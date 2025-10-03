@@ -46,6 +46,87 @@ class PrometheusTools:
 
         logger.info("Prometheus tools initialized", url=self.prometheus_url)
 
+    def _categorize_metrics(self, metrics: list[str]) -> dict[str, dict]:
+        """
+        Categorize metrics into logical groups.
+
+        Args:
+            metrics: List of metric names
+
+        Returns:
+            Dictionary with categories and their metric counts + examples
+        """
+        categories = {
+            "CPU": {"pattern": ["cpu", "processor"], "metrics": [], "count": 0},
+            "Memory": {"pattern": ["memory", "mem", "ram"], "metrics": [], "count": 0},
+            "Network": {
+                "pattern": ["network", "net", "bytes_sent", "bytes_recv", "packet"],
+                "metrics": [],
+                "count": 0,
+            },
+            "Disk/Storage": {
+                "pattern": ["disk", "storage", "filesystem", "volume", "io"],
+                "metrics": [],
+                "count": 0,
+            },
+            "Container": {"pattern": ["container_", "pod_"], "metrics": [], "count": 0},
+            "Kubernetes": {"pattern": ["kube_", "kubelet_"], "metrics": [], "count": 0},
+            "Node": {"pattern": ["node_"], "metrics": [], "count": 0},
+            "HTTP/API": {
+                "pattern": ["http", "api", "request"],
+                "metrics": [],
+                "count": 0,
+            },
+            "Database": {
+                "pattern": ["db_", "sql", "postgres", "mysql", "mongo"],
+                "metrics": [],
+                "count": 0,
+            },
+            "Application": {
+                "pattern": ["app_", "application_"],
+                "metrics": [],
+                "count": 0,
+            },
+            "Monitoring": {
+                "pattern": ["prometheus_", "grafana_", "loki_", "alertmanager_"],
+                "metrics": [],
+                "count": 0,
+            },
+            "Other": {"pattern": [], "metrics": [], "count": 0},
+        }
+
+        for metric in metrics:
+            metric_lower = metric.lower()
+            categorized = False
+
+            for category, info in categories.items():
+                if category == "Other":
+                    continue
+
+                for pattern in info["pattern"]:
+                    if pattern in metric_lower:
+                        info["count"] += 1
+                        if len(info["metrics"]) < 5:  # Keep 5 examples
+                            info["metrics"].append(metric)
+                        categorized = True
+                        break
+
+                if categorized:
+                    break
+
+            if not categorized:
+                categories["Other"]["count"] += 1
+                if len(categories["Other"]["metrics"]) < 5:
+                    categories["Other"]["metrics"].append(metric)
+
+        # Remove empty categories and format output
+        result = {}
+        for category, info in categories.items():
+            if info["count"] > 0:
+                result[category] = {"count": info["count"], "examples": info["metrics"]}
+
+        return result
+
     def _format_datetime(self, dt: datetime) -> str:
         """Convert datetime to Prometheus timestamp format (Unix timestamp)."""
         if dt.tzinfo is None:
@@ -649,8 +730,11 @@ class PrometheusTools:
             str | None, "Metric name pattern to filter. Optional."
         ] = None,
         limit: Annotated[
-            int, "Maximum number of metric names to return (default: 1000)"
-        ] = 1000,
+            int, "Maximum number of metric names to return (default: 100)"
+        ] = 100,
+        categorize: Annotated[
+            bool, "Group metrics by category instead of listing all"
+        ] = True,
     ) -> dict[str, Any]:
         """
         Get list of available metric names from Prometheus.
@@ -658,6 +742,9 @@ class PrometheusTools:
         This queries the /api/v1/label/__name__/values endpoint to retrieve
         all available metric names. Optionally filters by namespace, pod,
         and metric name pattern.
+
+        OPTIMIZATION: When categorize=True, groups metrics by category
+        to avoid overwhelming output with hundreds of metrics.
         """
         try:
             # Get all metric names from Prometheus
@@ -684,6 +771,30 @@ class PrometheusTools:
                 pattern = metric_name.replace("*", ".*").replace("?", ".")
                 regex = re.compile(pattern, re.IGNORECASE)
                 all_metrics = [m for m in all_metrics if regex.search(m)]
+
+            # OPTIMIZATION: Categorize metrics if requested
+            if categorize and len(all_metrics) > 20:
+                categories = self._categorize_metrics(all_metrics)
+
+                return {
+                    "status": "success",
+                    "total_metrics": len(all_metrics),
+                    "categorized": True,
+                    "categories": categories,
+                    "namespace_filter": namespace,
+                    "pod_name_filter": pod_name,
+                    "metric_name_filter": metric_name,
+                    "note": (
+                        f"Found {len(all_metrics)} metrics. "
+                        "Grouped by category to avoid overwhelming output. "
+                        "Use metric_name filter (e.g., 'container_*') to get specific metrics, "
+                        "or set categorize=False for full list."
+                    ),
+                    "suggestion": (
+                        "Ask user which category they're interested in, "
+                        "then search with metric_name filter for that category."
+                    ),
+                }
 
             # If no filters are specified, return all metrics (limited)
             if not namespace and not pod_name:

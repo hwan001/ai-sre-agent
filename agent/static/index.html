@@ -3,139 +3,83 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SRE AI Agent v3.0 - Conversational Multi-Agent Platform</title>
+    <title>SRE AI Team Chat</title>
     <link rel="stylesheet" href="/static/style.css">
-    <!-- Markdown rendering library -->
     <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
 </head>
 <body>
-    <div class="container">
-        <header class="header">
-            <h1>� SRE AI Agent v3.0</h1>
-            <p>Conversational Multi-Agent Platform - Dynamic Swarm Collaboration</p>
-            <div class="status-bar">
-                <div class="status-item active">
-                    <span class="status-dot active"></span>
-                    <strong>Prometheus</strong>
-                </div>
-                <div class="status-item active">
-                    <span class="status-dot active"></span>
-                    <strong>Loki</strong>
-                </div>
-                <div class="status-item active">
-                    <span class="status-dot active"></span>
-                    <strong>Swarm AI</strong>
+    <div class="chat-container">
+        <!-- Header with minimal branding -->
+        <header class="chat-header">
+            <div class="header-content">
+                <h1>🤖 SRE AI Team</h1>
+                <div class="connection-status" id="connectionStatus">
+                    <span class="status-dot connecting"></span>
+                    <span class="status-text">Connecting...</span>
                 </div>
             </div>
         </header>
         
-        <main class="main-content">
-            <div class="chat-section">
-                <div class="agents-panel">
-                    <h3>Active Agents</h3>
-                    <div class="agents-grid">
-                        <div class="agent-badge orchestrator" title="Routes conversations to appropriate experts">
-                            <span class="agent-icon">🎯</span>
-                            <span>Orchestrator</span>
-                        </div>
-                        <div class="agent-badge metric" title="Analyzes Prometheus metrics and resource usage">
-                            <span class="agent-icon">📊</span>
-                            <span>Metric Expert</span>
-                        </div>
-                        <div class="agent-badge log" title="Searches and analyzes Loki logs">
-                            <span class="agent-icon">📋</span>
-                            <span>Log Expert</span>
-                        </div>
-                        <div class="agent-badge analysis" title="Performs root cause analysis">
-                            <span class="agent-icon">🔬</span>
-                            <span>Analyst</span>
-                        </div>
-                        <div class="agent-badge report" title="Generates comprehensive reports">
-                            <span class="agent-icon">📈</span>
-                            <span>Reporter</span>
-                        </div>
-                    </div>
+        <!-- Main chat area -->
+        <main class="chat-main">
+            <!-- Active agents indicator -->
+            <div class="active-agents" id="activeAgents">
+                <div class="agents-label">AI Team:</div>
+                <div class="agents-list">
+                    <div class="agent-avatar" data-agent="orchestrator" title="Orchestrator">🎯</div>
+                    <div class="agent-avatar" data-agent="metrics" title="Metrics Expert">📊</div>
+                    <div class="agent-avatar" data-agent="logs" title="Logs Expert">📋</div>
+                    <div class="agent-avatar" data-agent="analyst" title="Analyst">🔬</div>
                 </div>
-                
-                <div class="quick-actions">
-                    <button class="quick-btn" data-query="Show me pods with high CPU usage">📊 High CPU Pods</button>
-                    <button class="quick-btn" data-query="Find errors in the last hour">� Recent Errors</button>
-                    <button class="quick-btn" data-query="Why is my pod crashing?">🚨 Pod Crash Analysis</button>
-                    <button class="quick-btn" data-query="Give me a system health report">📈 Health Report</button>
-                </div>
-                
-                <div id="messages" class="messages"></div>
-                
-                <div class="input-section">
-                    <div class="input-controls">
-                        <textarea id="messageInput" placeholder="Ask me anything about your Kubernetes cluster..." rows="3"></textarea>
-                        <div class="button-group">
-                            <button id="sendButton">💬 Send</button>
-                            <button id="reportButton" class="secondary">📊 Generate Report</button>
-                        </div>
+            </div>
+            
+            <!-- Messages container -->
+            <div class="messages" id="messages">
+                <!-- Welcome message -->
+                <div class="welcome-message">
+                    <div class="welcome-icon">�</div>
+                    <h2>안녕하세요! SRE AI Team입니다</h2>
+                    <p>클러스터 상태, 메트릭, 로그 등 무엇이든 물어보세요.<br>AI 전문가 팀이 실시간으로 협업하여 답변드립니다.</p>
+                    <div class="quick-questions">
+                        <button class="quick-q" data-query="Show CPU usage over time">� CPU 사용률 보기</button>
+                        <button class="quick-q" data-query="Show memory trend">💾 메모리 추세</button>
+                        <button class="quick-q" data-query="Show error logs">🚨 에러 로그</button>
+                        <button class="quick-q" data-query="What's the cluster status?">🎯 클러스터 상태</button>
                     </div>
                 </div>
             </div>
             
-            <aside class="sidebar">
-                <section class="sidebar-section">
-                    <h3>Connection</h3>
-                    <div id="connectionStatus">
-                        <span class="status-dot connecting"></span>Connecting...
-                    </div>
-                </section>
-                
-                <section class="sidebar-section">
-                    <h3>Agent Status</h3>
-                    <div id="agentStatus">
-                        <div class="status-item">Initializing...</div>
-                    </div>
-                </section>
-                
-                <section class="sidebar-section">
-                    <h3>Architecture</h3>
-                    <div class="components-grid">
-                        <div class="component-item orchestrator">
-                            <strong>🎯 Swarm Team</strong>
-                            <small>Dynamic HandOff</small>
-                        </div>
-                        <div class="component-item log-team">
-                            <strong>📋 Conversational</strong>
-                            <small>Context-aware</small>
-                        </div>
-                        <div class="component-item metric-team">
-                            <strong>📊 Streaming</strong>
-                            <small>Real-time</small>
-                        </div>
-                        <div class="component-item action-team">
-                            <strong>⚡ Parallel Tools</strong>
-                            <small>Fast execution</small>
-                        </div>
-                        <div class="component-item context">
-                            <strong>📦 AutoGen 0.7</strong>
-                            <small>Multi-agent</small>
-                        </div>
-                        <div class="component-item tools">
-                            <strong>🔧 Azure OpenAI</strong>
-                            <small>GPT-4o</small>
-                        </div>
-                    </div>
-                </section>
-                
-                <section class="sidebar-section">
-                    <h3>Examples</h3>
-                    <div class="examples">
-                        <div class="example-item">• "Why is my pod crashing?"</div>
-                        <div class="example-item">• "Show me high CPU pods"</div>
-                        <div class="example-item">• "Find errors in last hour"</div>
-                        <div class="example-item">• "Give me a health report"</div>
-                    </div>
-                </section>
-            </aside>
+            <!-- Typing indicator -->
+            <div class="typing-indicator" id="typingIndicator" style="display: none;">
+                <div class="typing-avatar">🤖</div>
+                <div class="typing-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <div class="typing-text">AI Team이 분석중입니다...</div>
+            </div>
         </main>
+        
+        <!-- Input area -->
+        <div class="chat-input-area">
+            <div class="input-wrapper">
+                <textarea 
+                    id="messageInput" 
+                    placeholder="메시지를 입력하세요... (Shift+Enter로 줄바꿈)"
+                    rows="1"></textarea>
+                <button id="sendButton" class="send-button">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                        <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 8L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="input-hint">
+                <span>💡 Tip: "CPU 사용률 보여줘" 또는 "에러 로그 확인" 등을 입력해보세요</span>
+            </div>
+        </div>
     </div>
     
-    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
     <script src="/static/chat.js"></script>
 </body>
 </html>

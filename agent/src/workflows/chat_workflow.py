@@ -24,15 +24,14 @@ import os
 from typing import Any
 
 import structlog
-from autogen_agentchat.agents import AssistantAgent
-from autogen_agentchat.base import Handoff
 from autogen_agentchat.conditions import MaxMessageTermination, TextMentionTermination
 from autogen_agentchat.teams import Swarm
 from autogen_core import CancellationToken
 from autogen_ext.models.openai import AzureOpenAIChatCompletionClient
 
-from prompts.loader import load_prompt
+from agents.factory import AgentFactory
 from tools.tool_registry import ToolRegistry
+from utils.message_processor import MessageProcessor
 
 logger = structlog.get_logger()
 
@@ -121,136 +120,16 @@ class ChatWorkflow:
             log_tools_count=len(log_tools),
         )
 
-        # 1. Chat Orchestrator - The conversation router
-        logger.debug("Creating chat_orchestrator agent")
-        self.orchestrator = AssistantAgent(
-            name="chat_orchestrator",
-            description=load_prompt("chat_orchestrator"),
+        # Create agent factory
+        logger.debug("Creating agent factory")
+        self.agent_factory = AgentFactory(
             model_client=self.model_client,
-            handoffs=[
-                Handoff(
-                    target="metric_expert",
-                    description="Hand off to metric expert for Prometheus queries and resource analysis",
-                ),
-                Handoff(
-                    target="log_expert",
-                    description="Hand off to log expert for Loki queries and log analysis",
-                ),
-                Handoff(
-                    target="analysis_agent",
-                    description="Hand off to analysis agent for comprehensive root cause analysis",
-                ),
-                Handoff(
-                    target="report_agent",
-                    description="Hand off to report agent when user requests a report or summary",
-                ),
-                Handoff(
-                    target="presentation_agent",
-                    description="Hand off to presentation agent to format technical data into beautiful markdown",
-                ),
-            ],
-            tools=[],  # Orchestrator doesn't use tools directly
+            metric_tools=metric_tools,
+            log_tools=log_tools,
         )
-        logger.debug("chat_orchestrator agent created with 5 handoffs")
-
-        # 2. Metric Expert Agent - Prometheus specialist
-        logger.debug("Creating metric_expert agent", tools_count=len(metric_tools))
-        self.metric_expert = AssistantAgent(
-            name="metric_expert",
-            description=load_prompt("metric_expert_agent"),
-            model_client=self.model_client,
-            handoffs=[
-                Handoff(
-                    target="chat_orchestrator",
-                    description="Return to orchestrator with metric findings",
-                ),
-                Handoff(
-                    target="log_expert",
-                    description="Hand off to log expert if logs are needed to explain metrics",
-                ),
-            ],
-            tools=metric_tools,
-        )
-        logger.debug("metric_expert agent created")
-
-        # 3. Log Expert Agent - Loki specialist
-        logger.debug("Creating log_expert agent", tools_count=len(log_tools))
-        self.log_expert = AssistantAgent(
-            name="log_expert",
-            description=load_prompt("log_expert_agent"),
-            model_client=self.model_client,
-            handoffs=[
-                Handoff(
-                    target="chat_orchestrator",
-                    description="Return to orchestrator with log findings",
-                ),
-                Handoff(
-                    target="metric_expert",
-                    description="Hand off to metric expert if metrics context is needed",
-                ),
-            ],
-            tools=log_tools,  # Logs
-        )
-        logger.debug("log_expert agent created")
-
-        # 4. Analysis Agent - The synthesizer
-        logger.debug("Creating analysis_agent")
-        self.analysis_agent = AssistantAgent(
-            name="analysis_agent",
-            description=load_prompt("analysis_agent"),
-            model_client=self.model_client,
-            handoffs=[
-                Handoff(
-                    target="chat_orchestrator",
-                    description="Return to orchestrator with analysis results",
-                ),
-                Handoff(
-                    target="metric_expert",
-                    description="Request additional metrics if needed for analysis",
-                ),
-                Handoff(
-                    target="log_expert",
-                    description="Request additional logs if needed for analysis",
-                ),
-            ],
-            tools=[],  # Analysis doesn't need direct tool access
-        )
-        logger.debug("analysis_agent created")
-
-        # 5. Report Agent - The visualizer
-        logger.debug("Creating report_agent")
-        self.report_agent = AssistantAgent(
-            name="report_agent",
-            description=load_prompt("report_agent"),
-            model_client=self.model_client,
-            handoffs=[
-                Handoff(
-                    target="chat_orchestrator",
-                    description="Return to orchestrator with generated report",
-                ),
-            ],
-            tools=[],  # Uses conversation history to create reports
-        )
-        logger.debug("report_agent created")
-
-        # 6. Presentation Agent - The beautifier
-        logger.debug("Creating presentation_agent")
-        self.presentation_agent = AssistantAgent(
-            name="presentation_agent",
-            description=load_prompt("presentation_agent"),
-            model_client=self.model_client,
-            handoffs=[
-                Handoff(
-                    target="chat_orchestrator",
-                    description="Return to orchestrator with beautifully formatted response",
-                ),
-            ],
-            tools=[],  # Formats data from other agents
-        )
-        logger.debug("presentation_agent created")
 
         logger.info(
-            "Agents created",
+            "Agents ready to be created on demand",
             agents=[
                 "chat_orchestrator",
                 "metric_expert",
@@ -283,16 +162,12 @@ class ChatWorkflow:
             terminate_on_keyword=True,
         )
 
+        # Get fresh agent instances
+        agent_list = self.agent_factory.get_agent_list()
+
         # Create Swarm team
         team = Swarm(
-            participants=[
-                self.orchestrator,
-                self.metric_expert,
-                self.log_expert,
-                self.analysis_agent,
-                self.report_agent,
-                self.presentation_agent,
-            ],
+            participants=agent_list,
             termination_condition=termination,
         )
 
@@ -346,7 +221,7 @@ class ChatWorkflow:
             logger.debug("Swarm team created successfully")
 
             # Build task with context
-            task = self._build_chat_task(user_message, conversation_context)
+            task = MessageProcessor.build_task(user_message, conversation_context)
             logger.debug("Task built", task_length=len(task))
 
             # Run Swarm team with streaming
@@ -408,88 +283,6 @@ class ChatWorkflow:
                 "agents_participated": [],
             }
 
-    def _build_chat_task(
-        self,
-        user_message: str,
-        conversation_context: dict[str, Any] | None,
-    ) -> str:
-        """
-        Build chat task with context and conversation history.
-
-        Args:
-            user_message: User's message
-            conversation_context: Previous conversation context including history
-
-        Returns:
-            Formatted task for the team
-        """
-        task = ""
-
-        # Add conversation history if available (filtered and summarized)
-        if conversation_context and "conversation_history" in conversation_context:
-            history = conversation_context["conversation_history"]
-            if history:
-                task += "Previous Conversation Summary:\n"
-
-                # Filter out tool results and keep only user/assistant messages
-                filtered_history = []
-                for msg in history[-10:]:  # Look at last 10 messages
-                    role = msg.get("role", "")
-                    content = str(msg.get("content", ""))
-
-                    # Skip tool results and function calls (they're too verbose)
-                    if role in ["tool", "function"]:
-                        continue
-
-                    # Skip messages with tool call results in content
-                    if "tool_calls" in str(msg) or len(content) > 2000:
-                        # Summarize very long messages
-                        if role == "assistant":
-                            filtered_history.append(
-                                {
-                                    "role": role,
-                                    "content": "[Previous analysis provided]",
-                                }
-                            )
-                        continue
-
-                    filtered_history.append(msg)
-
-                # Only include last 4 messages (2 exchanges)
-                for msg in filtered_history[-4:]:
-                    role = msg.get("role", "unknown")
-                    content = msg.get("content", "")
-
-                    # Truncate long messages
-                    if len(content) > 300:
-                        content = content[:300] + "..."
-
-                    task += f"{role.upper()}: {content}\n"
-
-                task += "\n"
-
-                logger.debug(
-                    "Conversation history filtered",
-                    original_count=len(history),
-                    filtered_count=len(filtered_history),
-                    included_count=min(4, len(filtered_history)),
-                )
-
-        task += f"Current User Question: {user_message}\n\n"
-
-        # Add other context
-        if conversation_context:
-            if "namespace" in conversation_context:
-                task += f"Namespace: {conversation_context['namespace']}\n"
-            if "pod" in conversation_context:
-                task += f"Pod: {conversation_context['pod']}\n"
-            if "previous_findings" in conversation_context:
-                task += f"\nPrevious Findings:\n{conversation_context['previous_findings']}\n"
-
-        task += "\nPlease help the user by engaging the appropriate expert agents. Continue the conversation naturally based on the context."
-
-        return task
-
     def _process_chat_results(
         self,
         messages: list,
@@ -505,20 +298,11 @@ class ChatWorkflow:
         Returns:
             Structured chat response
         """
-        # Extract agent participation
-        agents_participated = list(
-            set(
-                getattr(msg, "source", "unknown")
-                for msg in messages
-                if hasattr(msg, "source")
-            )
-        )
-
-        # Get final response (last substantial message)
-        final_response = self._extract_final_response(messages)
-
-        # Extract key findings from each agent
-        findings = self._extract_agent_findings(messages)
+        # Extract information using MessageProcessor
+        agents_participated = MessageProcessor.get_agents_participated(messages)
+        final_response = MessageProcessor.extract_final_response(messages)
+        findings = MessageProcessor.extract_agent_findings(messages)
+        context_summary = MessageProcessor.extract_context_summary(messages)
 
         return {
             "status": "success",
@@ -526,6 +310,7 @@ class ChatWorkflow:
             "response": final_response,
             "agents_participated": agents_participated,
             "findings": findings,
+            "context_summary": context_summary,
             "messages": messages,
             "full_conversation": [
                 {
@@ -537,145 +322,6 @@ class ChatWorkflow:
                 for msg in messages
             ],
         }
-
-    def _extract_final_response(self, messages: list) -> str:
-        """Extract the final response to show the user."""
-        if not messages:
-            return "No response generated"
-
-        # Get last substantial message, skipping StopMessage and TERMINATE
-        for msg in reversed(messages):
-            # Skip StopMessage types
-            msg_type = type(msg).__name__
-            if msg_type in ["StopMessage", "HandoffMessage"]:
-                logger.debug("Skipping system message type", msg_type=msg_type)
-                continue
-
-            # Get content safely
-            if hasattr(msg, "content"):
-                content = msg.content  # Don't convert to string yet
-                # If content is a string, use it
-                if isinstance(content, str):
-                    content_clean = content.strip()
-                else:
-                    # If content is not a string, try to extract text
-                    content_clean = str(content).strip()
-            else:
-                content_clean = str(msg).strip()
-
-            # Skip empty messages
-            if not content_clean:
-                continue
-
-            # Skip if this looks like a serialized message object
-            if (
-                content_clean.startswith("messages=[")
-                or "TextMessage(" in content_clean
-            ):
-                logger.warning(
-                    "Skipping serialized message object",
-                    content_preview=content_clean[:100],
-                )
-                continue
-
-            # If message contains TERMINATE, extract the part before it
-            if "TERMINATE" in content_clean:
-                before_terminate = content_clean.split("TERMINATE")[0].strip()
-                # Remove trailing punctuation that might be left
-                before_terminate = before_terminate.rstrip("!.,;")
-
-                if len(before_terminate) > 30:
-                    logger.debug(
-                        "Extracted response before TERMINATE",
-                        response_length=len(before_terminate),
-                        source=getattr(msg, "source", "unknown"),
-                    )
-                    return before_terminate
-                # If nothing meaningful before TERMINATE, skip this message
-                continue
-
-            # Found a good response (no TERMINATE)
-            if len(content_clean) > 30:
-                logger.debug(
-                    "Final response extracted",
-                    source=getattr(msg, "source", "unknown"),
-                    length=len(content_clean),
-                )
-                return content_clean
-
-        # Fallback: try to find any non-empty message
-        for msg in reversed(messages):
-            msg_type = type(msg).__name__
-            if msg_type == "StopMessage":
-                continue
-
-            content = str(msg.content) if hasattr(msg, "content") else str(msg)
-            content_clean = content.replace("TERMINATE", "").strip()
-
-            # Skip serialized objects
-            if "messages=[" in content_clean or "TextMessage(" in content_clean:
-                continue
-
-            if len(content_clean) > 20:
-                logger.warning(
-                    "Using fallback response extraction",
-                    content_preview=content_clean[:100],
-                )
-                return content_clean
-
-        logger.warning("No suitable response found in messages")
-        return "Analysis completed. Please let me know if you need more information."
-
-    def _extract_agent_findings(self, messages: list) -> dict[str, list[str]]:
-        """Extract findings from each agent type."""
-        findings = {
-            "metrics": [],
-            "logs": [],
-            "analysis": [],
-            "report": [],
-            "presentation": [],
-        }
-
-        for msg in messages:
-            # Skip system message types
-            msg_type = type(msg).__name__
-            if msg_type in [
-                "StopMessage",
-                "HandoffMessage",
-                "ToolCallRequestEvent",
-                "ToolCallResultEvent",
-            ]:
-                continue
-
-            source = getattr(msg, "source", "")
-            content = str(msg.content) if hasattr(msg, "content") else str(msg)
-
-            # Skip short, system messages, or TERMINATE
-            if len(content) < 100 or "TERMINATE" in content:
-                continue
-
-            # Categorize by agent
-            if source == "metric_expert":
-                findings["metrics"].append(content)
-            elif source == "log_expert":
-                findings["logs"].append(content)
-            elif source == "analysis_agent":
-                findings["analysis"].append(content)
-            elif source == "report_agent":
-                findings["report"].append(content)
-            elif source == "presentation_agent":
-                findings["presentation"].append(content)
-
-        logger.debug(
-            "Agent findings extracted",
-            metrics_count=len(findings["metrics"]),
-            logs_count=len(findings["logs"]),
-            analysis_count=len(findings["analysis"]),
-            report_count=len(findings["report"]),
-            presentation_count=len(findings["presentation"]),
-        )
-
-        return findings
 
     async def close(self) -> None:
         """Close workflow resources."""
@@ -689,16 +335,23 @@ class ChatWorkflow:
     def get_workflow_info(self) -> dict[str, Any]:
         """Get workflow information."""
         return {
-            "version": "3.0.0",
+            "version": "3.1.0",  # Updated after refactoring
             "type": "conversational",
             "framework": "AutoGen 0.7 Swarm",
             "architecture": "Dynamic HandOff-based agent collaboration",
+            "code_organization": {
+                "agents": "src/agents/ - Modular agent definitions",
+                "factory": "AgentFactory - Centralized agent creation",
+                "message_processing": "MessageProcessor - Utility for message handling",
+                "workflow": "ChatWorkflow - Main orchestration logic",
+            },
             "agents": {
                 "chat_orchestrator": "Conversation router and coordinator",
                 "metric_expert": "Prometheus metrics specialist",
                 "log_expert": "Loki logs specialist",
                 "analysis_agent": "Root cause analysis synthesizer",
                 "report_agent": "Visual report generator",
+                "presentation_agent": "Markdown formatter",
             },
             "features": [
                 "Natural conversation flow",
@@ -706,6 +359,7 @@ class ChatWorkflow:
                 "Multiple agents can contribute to same conversation",
                 "On-demand report generation",
                 "Streaming support for real-time updates",
+                "Modular and maintainable architecture",
             ],
         }
 
