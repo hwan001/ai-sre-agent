@@ -25,6 +25,11 @@ spec:
         ports:
         - containerPort: 8000
           name: http
+        # Environment variables from ConfigMap (non-sensitive)
+        envFrom:
+        - configMapRef:
+            name: sre-agent-config
+        # Environment variables from Secret (sensitive)
         env:
         - name: AZURE_OPENAI_ENDPOINT
           valueFrom:
@@ -36,16 +41,6 @@ spec:
             secretKeyRef:
               name: sre-agent-secrets
               key: azure-openai-api-key
-        - name: K8S_IN_CLUSTER
-          value: "true"
-        - name: API_HOST
-          value: "0.0.0.0"
-        - name: API_PORT
-          value: "8000"
-        - name: PROMETHEUS_URL
-          value: "http://prometheus-operated.observability:9090"
-        - name: LOKI_URL
-          value: "http://loki.observability:3100"
         resources:
           requests:
             memory: "512Mi"
@@ -154,12 +149,61 @@ subjects:
   namespace: sre-system
 
 ---
+# ConfigMap for non-sensitive configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sre-agent-config
+  namespace: sre-system
+data:
+  # API Configuration
+  API_HOST: "0.0.0.0"
+  API_PORT: "8000"
+  API_LOG_LEVEL: "INFO"
+  
+  # Monitoring URLs (internal cluster services)
+  PROMETHEUS_URL: "http://prom-kube-prometheus-stack-prometheus.observability:9090"
+  LOKI_URL: "http://loki.observability:3100"
+  LOKI_TIMEOUT: "30"
+  
+  # Kubernetes Configuration
+  K8S_IN_CLUSTER: "true"
+  K8S_NAMESPACE: "default"
+  
+  # LLM Settings
+  AZURE_OPENAI_API_VERSION: "2024-02-15-preview"
+  TEMPERATURE: "0.3"
+  MAX_TOKENS: "1000"
+  TIMEOUT_SECONDS: "60"
+
+---
+# Secret for sensitive credentials
+# NOTE: Replace the placeholder values with actual credentials before deploying
 apiVersion: v1
 kind: Secret
 metadata:
   name: sre-agent-secrets
   namespace: sre-system
+  annotations:
+    description: "Sensitive credentials for SRE Agent - DO NOT commit real values to git"
 type: Opaque
 stringData:
-  azure-openai-endpoint: "REPLACE_WITH_YOUR_ENDPOINT"
-  azure-openai-api-key: "REPLACE_WITH_YOUR_API_KEY"
+  # Azure OpenAI Configuration
+  # Example: https://your-resource-name.openai.azure.com/
+  azure-openai-endpoint: "https://REPLACE-WITH-YOUR-RESOURCE.openai.azure.com/"
+  
+  # Azure OpenAI API Key
+  # Get this from Azure Portal > Azure OpenAI > Keys and Endpoint
+  azure-openai-api-key: "REPLACE_WITH_YOUR_AZURE_OPENAI_API_KEY"
+
+---
+# Example: How to create secret from command line (recommended for production)
+# 
+# kubectl create secret generic sre-agent-secrets \
+#   --from-literal=azure-openai-endpoint='https://your-resource.openai.azure.com/' \
+#   --from-literal=azure-openai-api-key='your-actual-api-key' \
+#   -n sre-system
+#
+# Or use sealed-secrets / external-secrets for better security:
+# - Sealed Secrets: https://github.com/bitnami-labs/sealed-secrets
+# - External Secrets: https://external-secrets.io/
