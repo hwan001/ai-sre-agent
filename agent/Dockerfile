@@ -1,6 +1,6 @@
 # SRE Agent - Multi-stage Docker build
 
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -12,8 +12,9 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-# Copy dependency files
+# Copy dependency files and source code (required for editable install)
 COPY pyproject.toml uv.lock ./
+COPY src/ ./src/
 
 # Install dependencies
 RUN uv sync --frozen --no-dev
