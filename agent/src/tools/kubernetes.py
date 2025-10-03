@@ -323,3 +323,19 @@ class KubernetesTools:
             "total_events": len(events),
             "events": events[:limit],
         }
+
+
+def get_kubernetes_tools() -> list:
+    """
+    Get Kubernetes tools for AutoGen agents.
+
+    Returns:
+        List of Kubernetes tool functions
+    """
+    k8s_tools_instance = KubernetesTools()
+
+    return [
+        k8s_tools_instance.get_pod_status,
+        k8s_tools_instance.get_recent_events,
+        k8s_tools_instance.restart_deployment,
+    ]

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from .analysis_agent import create_analysis_agent
+from .kubernetes_expert import create_kubernetes_expert
 from .log_expert import create_log_expert
 from .metric_expert import create_metric_expert
 from .orchestrator import create_orchestrator
@@ -34,6 +35,7 @@ class AgentFactory:
         model_client: AzureOpenAIChatCompletionClient,
         metric_tools: list[Any],
         log_tools: list[Any],
+        k8s_tools: list[Any],
     ):
         """
         Initialize agent factory.
@@ -42,15 +44,18 @@ class AgentFactory:
             model_client: Azure OpenAI model client
             metric_tools: List of Prometheus tools
             log_tools: List of Loki tools
+            k8s_tools: List of Kubernetes tools
         """
         self.model_client = model_client
         self.metric_tools = metric_tools
         self.log_tools = log_tools
+        self.k8s_tools = k8s_tools
 
         logger.debug(
             "AgentFactory initialized",
             metric_tools_count=len(metric_tools),
             log_tools_count=len(log_tools),
+            k8s_tools_count=len(k8s_tools),
         )
 
     def create_all_agents(
@@ -73,6 +78,10 @@ class AgentFactory:
             "log_expert": create_log_expert(
                 self.model_client,
                 self.log_tools,
+            ),
+            "kubernetes_expert": create_kubernetes_expert(
+                self.model_client,
+                self.k8s_tools,
             ),
             "analysis_agent": create_analysis_agent(self.model_client),
             "report_agent": create_report_agent(self.model_client),
@@ -98,6 +107,7 @@ class AgentFactory:
             agents["orchestrator"],
             agents["metric_expert"],
             agents["log_expert"],
+            agents["kubernetes_expert"],
             agents["analysis_agent"],
             agents["report_agent"],
             agents["presentation_agent"],

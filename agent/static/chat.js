@@ -253,6 +253,8 @@ class ChatApp {
             '메트릭 전문가': { emoji: '📊', name: '메트릭 전문가' },
             'log_expert': { emoji: '📋', name: '로그 분석가' },
             '로그 분석가': { emoji: '📋', name: '로그 분석가' },
+            'kubernetes_expert': { emoji: '☸️', name: 'K8s 전문가' },
+            'K8s 전문가': { emoji: '☸️', name: 'K8s 전문가' },
             'analysis_agent': { emoji: '🔬', name: '데이터 분석가' },
             '데이터 분석가': { emoji: '🔬', name: '데이터 분석가' },
             'report_agent': { emoji: '📈', name: '리포터' },
@@ -276,6 +278,8 @@ class ChatApp {
             '메트릭 전문가': 'metrics',
             'log_expert': 'logs',
             '로그 분석가': 'logs',
+            'kubernetes_expert': 'kubernetes',
+            'K8s 전문가': 'kubernetes',
             'analysis_agent': 'analyst',
             '데이터 분석가': 'analyst',
         };
