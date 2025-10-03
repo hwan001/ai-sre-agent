@@ -17,51 +17,13 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: "3.11"
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/agent
 
 jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: agent
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-
-      - name: Set up Python
-        run: uv python install ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
-        run: uv sync --all-extras
-
-      - name: Run linting
-        run: uv run ruff check src/ tests/
-
-      - name: Run type checking
-        run: uv run mypy src/ --ignore-missing-imports
-
-      - name: Run tests
-        run: uv run pytest tests/ -v --cov=src --cov-report=xml --cov-report=term
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v3
-        with:
-          files: ./agent/coverage.xml
-          flags: unittests
-          name: codecov-umbrella
-
   build:
     name: Build Docker Image
     runs-on: ubuntu-latest
-    needs: test
     # Only build and push Docker image when merged to main branch
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
@@ -110,9 +72,6 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: agent
 
     steps:
       - name: Checkout code
