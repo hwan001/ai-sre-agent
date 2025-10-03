@@ -35,7 +35,10 @@ def create_orchestrator(
     handoffs = [
         Handoff(
             target="metric_expert",
-            description="Hand off to metric expert for Prometheus queries and resource analysis",
+            description=(
+                "Hand off to metric expert for "
+                "Prometheus queries and resource analysis"
+            ),
         ),
         Handoff(
             target="log_expert",
@@ -43,19 +46,29 @@ def create_orchestrator(
         ),
         Handoff(
             target="kubernetes_expert",
-            description="Hand off to kubernetes expert for pod status, events, and cluster diagnostics",
+            description=(
+                "Hand off to kubernetes expert for "
+                "pod status, events, and cluster diagnostics"
+            ),
         ),
         Handoff(
             target="analysis_agent",
-            description="Hand off to analysis agent for comprehensive root cause analysis",
+            description=(
+                "Hand off to analysis agent for " "comprehensive root cause analysis"
+            ),
         ),
         Handoff(
             target="report_agent",
-            description="Hand off to report agent when user requests a report or summary",
+            description=(
+                "Hand off to report agent when " "user requests a report or summary"
+            ),
         ),
         Handoff(
             target="presentation_agent",
-            description="Hand off to presentation agent to format technical data into beautiful markdown",
+            description=(
+                "Hand off to presentation agent to format "
+                "technical data into beautiful markdown"
+            ),
         ),
     ]
 

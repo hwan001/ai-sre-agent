@@ -251,7 +251,8 @@ def initialize_tool_registry() -> ToolRegistry:
     Initialize tool registry with all available tools.
 
     This should be called once at application startup.
-    Subsequent calls will return the already-initialized registry without re-registering tools.
+    Subsequent calls will return the already-initialized registry
+    without re-registering tools.
 
     Returns:
         Initialized tool registry
