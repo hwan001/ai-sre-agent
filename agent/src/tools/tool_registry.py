@@ -251,7 +251,8 @@ def initialize_tool_registry() -> ToolRegistry:
     Initialize tool registry with all available tools.
 
     This should be called once at application startup.
-    Subsequent calls will return the already-initialized registry without re-registering tools.
+    Subsequent calls will return the already-initialized registry
+    without re-registering tools.
 
     Returns:
         Initialized tool registry
@@ -291,15 +292,11 @@ def initialize_tool_registry() -> ToolRegistry:
 
     try:
         # Register Kubernetes tools
-        from tools.kubernetes import KubernetesTools
+        from tools.kubernetes import get_kubernetes_tools
 
-        k8s_tools_instance = KubernetesTools()
-        # Assuming KubernetesTools has a method to get tool functions
-        # This may need adjustment based on actual implementation
-        if hasattr(k8s_tools_instance, "get_tools"):
-            k8s_tools = k8s_tools_instance.get_tools()
-            registry.register_tools("kubernetes", k8s_tools)
-            logger.info("Kubernetes tools registered")
+        k8s_tools = get_kubernetes_tools()
+        registry.register_tools("kubernetes", k8s_tools)
+        logger.info("Kubernetes tools registered")
 
     except Exception as e:
         logger.error("Failed to register Kubernetes tools", error=str(e))

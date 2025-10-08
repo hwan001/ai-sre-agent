@@ -114,10 +114,12 @@ class ChatWorkflow:
         # Get tools from registry
         metric_tools = self.tool_registry.get_tools("metrics")
         log_tools = self.tool_registry.get_tools("logs")
+        k8s_tools = self.tool_registry.get_tools("kubernetes")
         logger.debug(
             "Tools retrieved from registry",
             metric_tools_count=len(metric_tools),
             log_tools_count=len(log_tools),
+            k8s_tools_count=len(k8s_tools),
         )
 
         # Create agent factory
@@ -126,6 +128,7 @@ class ChatWorkflow:
             model_client=self.model_client,
             metric_tools=metric_tools,
             log_tools=log_tools,
+            k8s_tools=k8s_tools,
         )
 
         logger.info(
@@ -134,6 +137,7 @@ class ChatWorkflow:
                 "chat_orchestrator",
                 "metric_expert",
                 "log_expert",
+                "kubernetes_expert",
                 "analysis_agent",
                 "report_agent",
                 "presentation_agent",

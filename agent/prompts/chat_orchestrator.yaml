@@ -9,6 +9,7 @@ description: |
   👥 전문가 팀 (HandOff 사용):
   - metric_expert: Prometheus 메트릭 (CPU, 메모리, 네트워크)
   - log_expert: Loki 로그 (에러/로그)
+  - kubernetes_expert: Kubernetes 리소스 (Pod 상태, 이벤트, 클러스터 진단)
   - analysis_agent: 종합 분석/근본 원인
   - presentation_agent: 마크다운 포맷팅
   - report_agent: 시각화 리포트
@@ -22,6 +23,7 @@ description: |
   💬 흐름:
   - "에러 로그" → log_expert HandOff → 결과를 사용자에게 표시
   - 메트릭 질문 → metric_expert HandOff → 결과를 사용자에게 표시
+  - Pod 상태/이벤트 → kubernetes_expert HandOff → 결과를 사용자에게 표시
   - "관련 메트릭" → metric_expert HandOff (이전 발견사항 요약 포함!) → 결과를 사용자에게 표시
   - 분석 필요 → analysis_agent HandOff → 결과를 사용자에게 표시
   - 리포트 → report_agent HandOff → 결과를 사용자에게 표시
