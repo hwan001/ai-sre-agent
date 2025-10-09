@@ -19,11 +19,11 @@ logger = structlog.get_logger()
 class DisplayMessage:
     """Structured message for WebSocket display."""
 
-    type: str  # "agent_message", "agent_thinking", "agent_handoff", "system"
+    type: str  # "agent_message", "agent_thinking", "agent_handoff", "system", "internal"
     agent: str  # Agent name
     content: str  # Message content
     metadata: dict[str, Any] | None = None  # Additional info
-    visible: bool = True  # Should show to user
+    collapsed: bool = False  # Should start collapsed (for internal messages)
 
 
 class MessageFormatter:
@@ -69,12 +69,14 @@ class MessageFormatter:
     ]
 
     # Keywords indicating system messages (not user-facing)
+    # These are internal coordination messages between agents
     SYSTEM_KEYWORDS = [
-        "terminate",
         "transferred to",
         "adopting the role",
-        "handoff",
-        "transfer",
+        "📍 current user question:",  # Task format from MessageProcessor
+        "📋 previous conversation context:",  # Conversation history context
+        "🤝 instructions:",  # Instructions to agents
+        "====================",  # Task separators
     ]
 
     # Friendly greeting messages when agents start working
@@ -96,70 +98,66 @@ class MessageFormatter:
             message: AutoGen message object
 
         Returns:
-            DisplayMessage if should be shown, None if should be filtered
+            DisplayMessage categorized by type (all visible, some collapsed by default)
         """
         message_type = type(message).__name__
 
-        # Skip internal message types
+        # Only skip truly internal tool execution messages
         if message_type in cls.SKIP_MESSAGE_TYPES:
-            logger.debug("Filtering internal message", msg_type=message_type)
             return None
 
-        # Extract agent source
+        # Extract agent source and content
         agent = cls._extract_agent(message)
-
-        # Extract content
         content = cls._extract_content(message)
+
         if not content:
-            logger.debug("No content in message", msg_type=message_type)
             return None
 
-        # Check if content is internal/debug
-        if cls._is_debug_content(content):
-            logger.debug(
-                "Filtering debug content",
-                agent=agent,
-                content_preview=content[:100],
-            )
-            return None
+        # Determine if this is an internal coordination message
+        is_internal = cls._is_internal_message(content, agent)
 
-        # Check if content is system message
-        if cls._is_system_message(content):
-            logger.debug(
-                "Filtering system message",
-                agent=agent,
-                content_preview=content[:100],
-            )
-            return None
-
-        # Handle HandoffMessage specially - make it brief and friendly
+        # Handle HandoffMessage specially - show agent transition
         if message_type == "HandoffMessage":
             target = getattr(message, "target", "expert")
-            target_name = cls._format_agent_name(target)
-            greeting = cls.AGENT_GREETINGS.get(target, "작업을 시작합니다")
             return DisplayMessage(
                 type="agent_handoff",
-                agent=agent,
-                content=f"👉 {target_name}에게 연결중... ({greeting})",
-                metadata={"target": getattr(message, "target", None)},
-                visible=True,
+                agent=cls._format_agent_name(agent),
+                content=f"→ {cls._format_agent_name(target)}",
+                metadata={
+                    "from_agent": agent,
+                    "to_agent": target,
+                },
+                collapsed=False,  # Always show handoffs
             )
 
-        # Clean up TERMINATE from content
+        # Categorize message
+        if is_internal:
+            msg_type = "internal"
+            collapsed = True  # Internal messages start collapsed
+        elif agent == "chat_orchestrator":
+            msg_type = "agent_message"
+            collapsed = False  # Orchestrator messages always visible
+        else:
+            msg_type = "agent_message"
+            collapsed = False  # Expert messages visible by default
+
+        # Clean content (remove TERMINATE, etc)
         content = cls._clean_content(content)
 
-        # Determine message category
-        msg_category = cls._categorize_message(message_type, content)
+        # Skip if content is empty after cleaning
+        if not content:
+            return None
 
         return DisplayMessage(
-            type=msg_category,
+            type=msg_type,
             agent=cls._format_agent_name(agent),
             content=content,
             metadata={
                 "message_type": message_type,
+                "original_agent": agent,
                 "length": len(content),
             },
-            visible=True,
+            collapsed=collapsed,
         )
 
     @classmethod
@@ -200,10 +198,19 @@ class MessageFormatter:
         return any(pattern in content for pattern in cls.DEBUG_PATTERNS)
 
     @classmethod
-    def _is_system_message(cls, content: str) -> bool:
-        """Check if content is a system message."""
+    def _is_internal_message(cls, content: str, agent: str) -> bool:
+        """
+        Check if this is an internal coordination message.
+        These messages start collapsed but are still visible.
+        """
+        # User source messages are internal task formatting
+        if agent == "user":
+            return True
+
         content_lower = content.lower()
-        return any(keyword in content_lower for keyword in cls.SYSTEM_KEYWORDS)
+
+        # Use SYSTEM_KEYWORDS for consistency
+        return any(keyword.lower() in content_lower for keyword in cls.SYSTEM_KEYWORDS)
 
     @classmethod
     def _clean_content(cls, content: str) -> str:
@@ -252,6 +259,7 @@ class MessageFormatter:
     def should_display_to_user(cls, message: Any) -> bool:
         """
         Quick check if message should be displayed to user.
+        Now all messages are displayed (some collapsed).
 
         Args:
             message: AutoGen message object
@@ -260,7 +268,7 @@ class MessageFormatter:
             True if should display, False otherwise
         """
         formatted = cls.format_message(message)
-        return formatted is not None and formatted.visible
+        return formatted is not None
 
     @classmethod
     def format_for_websocket(cls, message: Any) -> dict[str, Any] | None:
@@ -275,13 +283,20 @@ class MessageFormatter:
         """
         formatted = cls.format_message(message)
 
-        if not formatted or not formatted.visible:
+        if not formatted:
             return None
 
-        return {
+        result = {
             "type": formatted.type,
             "agent": formatted.agent,
             "message": formatted.content,
-            "metadata": formatted.metadata or {},
+            "collapsed": formatted.collapsed,  # Whether to start collapsed
             "timestamp": "now",
         }
+
+        # Add handoff-specific fields
+        if formatted.type == "agent_handoff" and formatted.metadata:
+            result["from_agent"] = formatted.metadata.get("from_agent")
+            result["to_agent"] = formatted.metadata.get("to_agent")
+
+        return result

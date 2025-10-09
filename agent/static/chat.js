@@ -13,26 +13,37 @@ class ChatApp {
         this.activeAgents = new Set();
         this.isFirstMessage = true;
         this.lastMessageContent = null; // Track last message to avoid duplicates
-        
+
+        // Agent name to icon mapping
+        this.agentMapping = {
+            'chat_orchestrator': 'orchestrator',
+            'metric_expert': 'metrics',
+            'log_expert': 'logs',
+            'kubernetes_expert': 'kubernetes',
+            'analysis_agent': 'analyst',
+            'report_agent': 'analyst',
+            'presentation_agent': 'analyst'
+        };
+
         this.initEventListeners();
         this.connect();
     }
-    
+
     initEventListeners() {
         this.sendButton.addEventListener('click', () => this.sendMessage());
-        
+
         this.messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 this.sendMessage();
             }
         });
-        
+
         this.messageInput.addEventListener('input', (e) => {
             e.target.style.height = 'auto';
             e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
         });
-        
+
         document.querySelectorAll('.quick-q').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const query = e.target.getAttribute('data-query');
@@ -43,19 +54,19 @@ class ChatApp {
             });
         });
     }
-    
+
     connect() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws`;
-        
+
         this.updateConnectionStatus('connecting', 'Connecting...');
         this.ws = new WebSocket(wsUrl);
-        
+
         this.ws.onopen = () => {
             console.log('✅ Connected');
             this.updateConnectionStatus('connected', 'Connected');
         };
-        
+
         this.ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
@@ -64,18 +75,18 @@ class ChatApp {
                 console.error('Error:', error);
             }
         };
-        
+
         this.ws.onclose = () => {
             this.updateConnectionStatus('disconnected', 'Disconnected');
             this.hideTypingIndicator();
             setTimeout(() => this.connect(), 5000);
         };
     }
-    
+
     sendMessage() {
         const message = this.messageInput.value.trim();
         if (!message) return;
-        
+
         if (this.isFirstMessage) {
             const welcomeMsg = document.querySelector('.welcome-message');
             if (welcomeMsg) {
@@ -86,9 +97,9 @@ class ChatApp {
             }
             this.isFirstMessage = false;
         }
-        
+
         this.addUserMessage(message);
-        
+
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify({
                 type: 'chat',
@@ -96,155 +107,197 @@ class ChatApp {
             }));
             this.showTypingIndicator();
         }
-        
+
         this.messageInput.value = '';
         this.messageInput.style.height = 'auto';
         this.messageInput.focus();
     }
-    
+
     handleMessage(data) {
         console.log('Received:', data.type, data);
-        
+
         switch(data.type) {
             case 'chat_start':
                 this.showTypingIndicator();
-                this.lastMessageContent = null; // Reset for new conversation
+                this.lastMessageContent = null;
                 break;
-                
+
             case 'agent_message':
-                // Skip 'User' agent messages (these are internal)
-                if (data.agent === 'User' || data.agent === 'user') {
-                    console.log('Skipping User agent message');
-                    break;
-                }
-                // Skip duplicate messages
-                if (this.lastMessageContent === data.message) {
-                    console.log('Skipping duplicate message from', data.agent);
-                    break;
-                }
-                this.lastMessageContent = data.message;
+            case 'internal':  // Internal messages are still shown, just collapsed
                 this.hideTypingIndicator();
-                this.addAgentMessage(data.agent, data.message);
+                this.addAgentMessage(
+                    data.agent,
+                    data.message,
+                    data.context,
+                    data.collapsed || data.type === 'internal'  // Collapsed if flagged or internal type
+                );
                 this.activateAgent(data.agent);
                 break;
-                
+
             case 'agent_thinking':
-                // Show thinking messages as agent messages
-                if (this.lastMessageContent === data.message) {
-                    console.log('Skipping duplicate thinking message');
-                    break;
-                }
-                this.lastMessageContent = data.message;
+                // Show thinking state
                 this.hideTypingIndicator();
-                this.addAgentMessage(data.agent, data.message);
+                this.showTypingIndicator(data.agent);
                 this.activateAgent(data.agent);
-                this.showTypingIndicator();
                 break;
-                
+
             case 'agent_handoff':
-                this.addSystemMessage(data.message);
-                this.showTypingIndicator();
+                // Show handoff between agents
+                this.addHandoffMessage(data.from_agent, data.to_agent, data.message);
+                this.showTypingIndicator(data.to_agent);
                 break;
-                
+
             case 'chat_complete':
                 this.hideTypingIndicator();
-                // Only show final message if it's different from last message
-                if (data.message && data.message.trim() && data.message !== this.lastMessageContent) {
-                    this.addAgentMessage('🎯 팀 리더', data.message);
-                }
                 this.clearActiveAgents();
-                this.lastMessageContent = null; // Reset for next conversation
+                this.lastMessageContent = null;
                 break;
-                
+
             case 'system_message':
                 this.addSystemMessage(data.message);
                 break;
-                
+
             case 'status':
-                // Just update status, don't show message
                 console.log('Status update:', data.message);
                 break;
-                
+
             case 'error':
                 this.hideTypingIndicator();
                 this.addSystemMessage(`⚠️ ${data.message}`);
                 break;
-                
+
             default:
                 console.log('Unknown message type:', data.type, data);
         }
     }
-    
+
     addUserMessage(content) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message user';
-        
+
         const bubbleDiv = document.createElement('div');
         bubbleDiv.className = 'message-bubble';
         bubbleDiv.textContent = content;
-        
+
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
         timestampDiv.textContent = this.getCurrentTime();
-        
+
         messageDiv.appendChild(bubbleDiv);
         messageDiv.appendChild(timestampDiv);
-        
+
         this.messagesDiv.appendChild(messageDiv);
         this.scrollToBottom();
     }
-    
-    addAgentMessage(agent, content) {
+
+    addAgentMessage(agent, content, context, collapsed = false) {
+        // Highlight the agent icon
+        this.highlightAgent(agent);
+
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message agent';
         messageDiv.setAttribute('data-agent', agent);
-        
+
+        // Add internal class if this is an internal message
+        if (collapsed) {
+            messageDiv.classList.add('internal');
+        }
+
         const headerDiv = document.createElement('div');
         headerDiv.className = 'agent-header';
-        
+
         const badgeDiv = document.createElement('div');
         badgeDiv.className = 'agent-badge';
-        
+
         const agentInfo = this.getAgentInfo(agent);
         badgeDiv.innerHTML = `<span class="emoji">${agentInfo.emoji}</span><span>${agentInfo.name}</span>`;
-        
+
         headerDiv.appendChild(badgeDiv);
-        
+
+        // Add collapse/expand button if message is long, has context, or should start collapsed
+        const shouldHaveCollapseBtn = content.length > 500 || collapsed || (context && Object.keys(context).length > 0);
+        if (shouldHaveCollapseBtn) {
+            const collapseBtn = document.createElement('button');
+            collapseBtn.className = 'collapse-btn';
+            collapseBtn.innerHTML = collapsed ? '▶' : '▼';
+            collapseBtn.title = '접기/펼치기';
+            collapseBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const bubble = messageDiv.querySelector('.message-bubble');
+                const isCollapsed = bubble.classList.toggle('collapsed');
+                collapseBtn.innerHTML = isCollapsed ? '▶' : '▼';
+            });
+            headerDiv.appendChild(collapseBtn);
+        }
+
         const bubbleDiv = document.createElement('div');
         bubbleDiv.className = 'message-bubble';
-        
+
+        // If should start collapsed, add collapsed class
+        if (collapsed) {
+            bubbleDiv.classList.add('collapsed');
+        }
+
         if (typeof marked !== 'undefined') {
             bubbleDiv.innerHTML = marked.parse(content);
         } else {
             bubbleDiv.textContent = content;
         }
-        
+
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
         timestampDiv.textContent = this.getCurrentTime();
-        
+
         messageDiv.appendChild(headerDiv);
         messageDiv.appendChild(bubbleDiv);
         messageDiv.appendChild(timestampDiv);
-        
+
         this.messagesDiv.appendChild(messageDiv);
         this.scrollToBottom();
     }
-    
+
     addSystemMessage(content) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message system';
-        
+
         const bubbleDiv = document.createElement('div');
         bubbleDiv.className = 'message-bubble';
         bubbleDiv.textContent = content;
-        
+
         messageDiv.appendChild(bubbleDiv);
-        
+
         this.messagesDiv.appendChild(messageDiv);
         this.scrollToBottom();
     }
-    
+
+    addHandoffMessage(fromAgent, toAgent, message) {
+        // Highlight both agents involved in the handoff
+        this.highlightAgent(fromAgent);
+        setTimeout(() => this.highlightAgent(toAgent), 500);
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message handoff';
+
+        const fromInfo = this.getAgentInfo(fromAgent);
+        const toInfo = this.getAgentInfo(toAgent);
+
+        const bubbleDiv = document.createElement('div');
+        bubbleDiv.className = 'message-bubble';
+        bubbleDiv.innerHTML = `
+            <div class="handoff-flow">
+                <span class="handoff-agent">${fromInfo.emoji} ${fromInfo.name}</span>
+                <span class="handoff-arrow">→</span>
+                <span class="handoff-agent">${toInfo.emoji} ${toInfo.name}</span>
+            </div>
+            <div class="handoff-message">${message || '작업을 전달합니다'}</div>
+        `;
+
+        messageDiv.appendChild(bubbleDiv);
+
+        this.messagesDiv.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
     getAgentInfo(agent) {
         const agentMap = {
             'chat_orchestrator': { emoji: '🎯', name: '팀 리더' },
@@ -260,16 +313,16 @@ class ChatApp {
             'report_agent': { emoji: '📈', name: '리포터' },
             'presentation_agent': { emoji: '🎨', name: '프레젠터' },
         };
-        
+
         if (agentMap[agent]) return agentMap[agent];
-        
+
         for (const [key, value] of Object.entries(agentMap)) {
             if (agent.includes(value.name)) return value;
         }
-        
+
         return { emoji: '🤖', name: agent };
     }
-    
+
     activateAgent(agentName) {
         const agentMap = {
             'chat_orchestrator': 'orchestrator',
@@ -283,55 +336,96 @@ class ChatApp {
             'analysis_agent': 'analyst',
             '데이터 분석가': 'analyst',
         };
-        
+
         const agentType = agentMap[agentName] || agentName;
         this.activeAgents.add(agentType);
-        
+
         const avatar = document.querySelector(`.agent-avatar[data-agent="${agentType}"]`);
         if (avatar) avatar.classList.add('active');
     }
-    
+
     clearActiveAgents() {
         document.querySelectorAll('.agent-avatar.active').forEach(avatar => {
             setTimeout(() => avatar.classList.remove('active'), 2000);
         });
         this.activeAgents.clear();
     }
-    
-    showTypingIndicator() {
+
+    showTypingIndicator(agentName) {
         if (this.typingIndicator) {
             this.typingIndicator.style.display = 'flex';
+
+            if (agentName) {
+                const agentInfo = this.getAgentInfo(agentName);
+                const typingAvatar = this.typingIndicator.querySelector('.typing-avatar');
+                const typingText = this.typingIndicator.querySelector('.typing-text');
+
+                if (typingAvatar) typingAvatar.textContent = agentInfo.emoji;
+                if (typingText) typingText.textContent = `${agentInfo.name}이(가) 생각 중...`;
+            }
+
             this.scrollToBottom();
         }
     }
-    
+
     hideTypingIndicator() {
         if (this.typingIndicator) {
             this.typingIndicator.style.display = 'none';
         }
     }
-    
+
     updateTypingText(text) {
         const typingText = document.querySelector('.typing-text');
         if (typingText) typingText.textContent = text;
     }
-    
+
     updateConnectionStatus(status, text) {
         const statusDot = this.connectionStatus.querySelector('.status-dot');
         const statusText = this.connectionStatus.querySelector('.status-text');
-        
+
         statusDot.className = `status-dot ${status}`;
         statusText.textContent = text;
     }
-    
+
+    // Highlight agent icon when they are speaking
+    highlightAgent(agentName) {
+        console.log('🔦 Highlighting agent:', agentName);
+
+        // Map agent name to icon data-agent attribute
+        const iconKey = this.agentMapping[agentName] || agentName;
+        console.log('  → Mapped to icon key:', iconKey);
+
+        const agentIcon = document.querySelector(`.agent-avatar[data-agent="${iconKey}"]`);
+        console.log('  → Found icon element:', agentIcon);
+
+        if (agentIcon) {
+            // Remove active class from all icons first
+            document.querySelectorAll('.agent-avatar').forEach(icon => {
+                icon.classList.remove('active');
+            });
+
+            // Add active class to current agent
+            agentIcon.classList.add('active');
+            console.log('  ✅ Added active class to:', iconKey);
+
+            // Auto-remove after 3 seconds
+            setTimeout(() => {
+                agentIcon.classList.remove('active');
+                console.log('  ⏰ Removed active class from:', iconKey);
+            }, 3000);
+        } else {
+            console.log('  ❌ Icon not found for:', iconKey);
+        }
+    }
+
     getCurrentTime() {
         const now = new Date();
-        return now.toLocaleTimeString('ko-KR', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
+        return now.toLocaleTimeString('ko-KR', {
+            hour: '2-digit',
+            minute: '2-digit'
         });
     }
-    
+
     scrollToBottom() {
         setTimeout(() => {
             this.messagesDiv.scrollTop = this.messagesDiv.scrollHeight;

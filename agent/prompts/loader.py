@@ -49,6 +49,7 @@ class PromptLoader:
             prompt_data = self._cache[agent_name]
         else:
             prompt_file = self.prompts_dir / f"{agent_name}.yaml"
+
             if not prompt_file.exists():
                 raise FileNotFoundError(
                     f"Prompt file not found: {prompt_file}\n"
