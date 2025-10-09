@@ -45,9 +45,24 @@ class BaseAgent:
             tools_count=len(tools) if tools else 0,
         )
 
+        # Add Korean response instruction to system message
+        enhanced_system_message = f"""{description}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚠️ **CRITICAL LANGUAGE INSTRUCTION:**
+
+**ALWAYS respond in Korean (한국어)** to the user.
+
+- Good Example (✅): "sample-apps 네임스페이스의 Pod 상태를 확인했습니다"
+- Bad Example (❌): "Checked the pod status for sample-apps namespace"
+
+Technical terms (Pod, Running, Ready) can remain in English, but sentences must be in Korean.
+"""
+
         agent = AssistantAgent(
             name=name,
-            description=description,
+            system_message=enhanced_system_message,  # Correct parameter for system message
             model_client=model_client,
             handoffs=handoffs,
             tools=tools or [],

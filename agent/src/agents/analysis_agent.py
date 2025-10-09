@@ -51,5 +51,5 @@ def create_analysis_agent(
         description=load_prompt("analysis_agent"),
         model_client=model_client,
         handoffs=handoffs,
-        tools=[],  # Analysis doesn't need direct tool access
+        tools=[],  # Analysis agent doesn't use tools directly
     )

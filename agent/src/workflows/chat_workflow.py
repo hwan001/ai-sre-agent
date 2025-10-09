@@ -155,14 +155,15 @@ class ChatWorkflow:
             New Swarm team instance
         """
 
-        # Termination conditions: stop on TERMINATE or max 20 messages
-        termination = MaxMessageTermination(max_messages=20) | TextMentionTermination(
+        # Termination conditions: stop on TERMINATE or max 15 messages
+        # Reduced from 20 to prevent infinite loops
+        termination = MaxMessageTermination(max_messages=15) | TextMentionTermination(
             "TERMINATE"
         )
 
         logger.debug(
             "Creating Swarm team with termination conditions",
-            max_messages=20,
+            max_messages=15,
             terminate_on_keyword=True,
         )
 

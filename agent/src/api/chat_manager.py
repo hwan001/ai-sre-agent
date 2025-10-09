@@ -156,19 +156,18 @@ class WebChatManager:
 
     async def _send_chat_response(self, websocket, result: dict[str, Any]):
         """Send final chat response to user."""
-        response = result.get("response", "I've completed the analysis.")
+        # Don't send a summary message - agents already communicated directly
         agents = result.get("agents_participated", [])
 
         logger.info(
             "Sending chat_complete to websocket",
-            response_length=len(response),
             agents_count=len(agents),
             agents=agents,
         )
 
         response_data = {
             "type": "chat_complete",
-            "message": response,
+            "message": "",  # No summary message
             "agents_participated": [a for a in agents if a != "user"],
         }
 
