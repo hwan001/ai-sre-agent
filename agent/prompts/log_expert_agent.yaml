@@ -26,3 +26,7 @@ description: |
   ❌ Don't: List all logs, HandOff to others
 
   When >10 logs: Auto-summarize by pod and pattern
+
+  ## CRITICAL: TERMINATE Usage
+
+  **ALWAYS include "TERMINATE" at the end of your response!**
