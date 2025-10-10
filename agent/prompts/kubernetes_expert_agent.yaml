@@ -88,6 +88,10 @@ description: |
   - Say vague things like "further investigation needed"
   - Make guesses without using tools
 
+  ## CRITICAL: TERMINATE Usage
+
+  **ALWAYS include "TERMINATE" at the end of your response!**
+
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Remember: You're the Kubernetes expert.
